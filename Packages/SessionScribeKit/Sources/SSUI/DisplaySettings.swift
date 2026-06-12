@@ -6,6 +6,11 @@ public enum DisplaySettings {
     public static let appearanceKey = "appearanceMode"
     public static let useMockEngineKey = "useMockEngine"
 
+    /// 檢視頁逐字稿顯示模式：歌詞模式或列表模式。
+    public static let transcriptModeKey = "detailTranscriptMode"
+    public static let lyricsMode = "lyrics"
+    public static let listMode = "list"
+
     public static let defaultFontSize = 14.0
     public static let fontSizeRange = 11.0...28.0
 

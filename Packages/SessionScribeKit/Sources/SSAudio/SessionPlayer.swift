@@ -17,6 +17,11 @@ public final class SessionPlayer: NSObject, AVAudioPlayerDelegate {
     public private(set) var currentSeconds: Double = 0
     public let totalSeconds: Double
 
+    /// 播放倍速；跨 chunk 沿用，播放中切換立即生效。
+    public var playbackRate: Float = 1.0 {
+        didSet { player?.rate = playbackRate }
+    }
+
     private let audioDirectory: URL
     private let manifest: AudioManifest
     private var player: AVAudioPlayer?
@@ -97,7 +102,9 @@ public final class SessionPlayer: NSObject, AVAudioPlayerDelegate {
         let url = audioDirectory.appending(path: manifest.chunks[index].file)
         player = try? AVAudioPlayer(contentsOf: url)
         player?.delegate = self
+        player?.enableRate = true
         player?.prepareToPlay()
+        player?.rate = playbackRate
         currentChunkIndex = index
     }
 
@@ -117,11 +124,14 @@ public final class SessionPlayer: NSObject, AVAudioPlayerDelegate {
 
     private func startPolling() {
         guard pollTask == nil else { return }
-        pollTask = Task {
+        // weak self：強持有會讓被丟棄的播放器連同輪詢 Task 一起洩漏、聲音停不下來。
+        pollTask = Task { [weak self] in
             while !Task.isCancelled {
-                if isPlaying, currentChunkIndex >= 0, let player {
-                    currentSeconds =
-                        manifest.chunks[currentChunkIndex].startSeconds + player.currentTime
+                guard let self else { return }
+                if self.isPlaying, self.currentChunkIndex >= 0, let player = self.player {
+                    self.currentSeconds =
+                        self.manifest.chunks[self.currentChunkIndex].startSeconds
+                        + player.currentTime
                 }
                 try? await Task.sleep(for: .milliseconds(200))
             }

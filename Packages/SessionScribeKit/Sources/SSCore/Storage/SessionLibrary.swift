@@ -27,6 +27,14 @@ public struct SessionLibrary: Sendable {
         return sessions.sorted { $0.createdAt > $1.createdAt }
     }
 
+    /// 重新命名 session 標題。metadata 原子覆寫。
+    public func rename(sessionID: String, to title: String) throws {
+        let dir = directory(for: sessionID)
+        var session = try SessionMetadataFile.read(from: dir)
+        session.title = title
+        try SessionMetadataFile.write(session, to: dir)
+    }
+
     /// 批次指派分類（規格 1.1 第 7 項）：nil 即移回未分類。metadata 原子覆寫。
     public func assign(categoryID: String?, to sessionIDs: Set<String>) throws {
         for sessionID in sessionIDs {
