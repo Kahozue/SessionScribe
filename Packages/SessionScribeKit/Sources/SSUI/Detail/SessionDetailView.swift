@@ -79,13 +79,27 @@ public struct SessionDetailView: View {
     @State private var model: SessionDetailViewModel
     /// 搜尋跳轉時要定位的 segment。
     let highlightSegmentID: String?
+    /// 右欄（事件標記與後續擴充）收合狀態，與主視窗工具列的切換鈕共用。
+    @Binding var showInspector: Bool
 
-    public init(directory: URL, highlightSegmentID: String? = nil) {
+    public init(
+        directory: URL,
+        highlightSegmentID: String? = nil,
+        showInspector: Binding<Bool> = .constant(true)
+    ) {
         _model = State(initialValue: SessionDetailViewModel(directory: directory))
         self.highlightSegmentID = highlightSegmentID
+        self._showInspector = showInspector
     }
 
     public var body: some View {
+        content
+            .inspector(isPresented: $showInspector) {
+                detailInspector
+            }
+    }
+
+    private var content: some View {
         VStack(spacing: 0) {
             if let session = model.session {
                 header(session)
@@ -119,6 +133,48 @@ public struct SessionDetailView: View {
         } message: {
             Text(model.errorMessage ?? "")
         }
+    }
+
+    /// 檢視頁右欄：事件標記列表；點時間跳轉播放。後續功能擴充也放這裡。
+    private var detailInspector: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("事件標記")
+                .font(.headline)
+            if model.markers.isEmpty {
+                Text("這個 session 沒有標記。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else {
+                List(model.markers) { marker in
+                    Button {
+                        model.player?.seek(to: marker.mediaSeconds)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Label(marker.label, systemImage: "bookmark.fill")
+                                    .font(.callout)
+                                Spacer()
+                                Text(TimeFormatting.hms(marker.mediaSeconds))
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                            if !marker.note.isEmpty {
+                                Text(marker.note)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .help("跳到 \(TimeFormatting.hms(marker.mediaSeconds))")
+                }
+                .listStyle(.inset)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .inspectorColumnWidth(min: 240, ideal: 300, max: 380)
     }
 
     private func header(_ session: Session) -> some View {

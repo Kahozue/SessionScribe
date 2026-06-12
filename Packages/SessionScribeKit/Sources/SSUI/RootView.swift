@@ -3,25 +3,23 @@ import SSAudio
 import SSCore
 import SwiftUI
 
-/// App 主視窗的三欄殼層：sidebar（搜尋、分類、session 列表、多選）、
-/// main（即時逐字稿或錄音檢視頁）、inspector（標記與選取匯出）。
+/// App 主視窗的三欄殼層：sidebar（搜尋、分類、session 列表、多選與批次列）、
+/// main（即時逐字稿或錄音檢視頁）、inspector（可收合，標記與後續擴充）。
 public struct RootView: View {
     @Bindable private var model: RecordingViewModel
     @State private var showInspector = true
     @State private var selection: Set<String> = []
     @State private var sidebarSelection: Set<String> = []
     @State private var searchText = ""
+    @State private var searchHistory = SearchHistory.load()
     @State private var searchHighlight: SearchHit?
     @State private var showCategoryManager = false
     @State private var confirmBatchDelete = false
+    @State private var infoSession: Session?
     @FocusState private var transcriptFocused: Bool
     @Environment(\.openWindow) private var openWindow
-    @AppStorage(DisplaySettings.fontSizeKey)
-    private var fontSize = DisplaySettings.defaultFontSize
     @AppStorage(DisplaySettings.appearanceKey)
     private var appearance = "system"
-    @AppStorage(DisplaySettings.useMockEngineKey)
-    private var useMockEngine = false
 
     public init(model: RecordingViewModel) {
         self.model = model
@@ -39,6 +37,9 @@ public struct RootView: View {
         .preferredColorScheme(DisplaySettings.colorScheme(for: appearance))
         .sheet(isPresented: $showCategoryManager) {
             CategoryManagerView(model: model)
+        }
+        .sheet(item: $infoSession) { session in
+            SessionInfoView(session: session)
         }
         .alert("需要麥克風權限", isPresented: $model.micPermissionDenied) {
             Button("開啟系統設定") {
@@ -125,13 +126,76 @@ public struct RootView: View {
             }
         }
         .searchable(text: $searchText, placement: .sidebar, prompt: "搜尋逐字稿與標記")
+        .searchSuggestions { searchSuggestionRows }
+        .onSubmit(of: .search) { recordSearch() }
         .contextMenu(forSelectionType: String.self) { ids in
             sessionContextMenu(for: ids)
+        }
+        .safeAreaInset(edge: .bottom) {
+            if sidebarSelection.count > 1 {
+                batchActionBar
+            }
         }
         .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 340)
     }
 
-    /// 跨逐字稿搜尋結果（規格 1.1 第 9 項）。
+    /// 搜尋紀錄建議（規格 1.1 第 9 項擴充：紀錄與清除）。
+    @ViewBuilder
+    private var searchSuggestionRows: some View {
+        if searchText.isEmpty && !searchHistory.isEmpty {
+            Section("最近搜尋") {
+                ForEach(searchHistory, id: \.self) { item in
+                    Label(item, systemImage: "clock.arrow.circlepath")
+                        .searchCompletion(item)
+                }
+                Button {
+                    SearchHistory.clear()
+                    searchHistory = []
+                } label: {
+                    Label("清除搜尋紀錄", systemImage: "trash")
+                }
+            }
+        }
+    }
+
+    private func recordSearch() {
+        SearchHistory.record(searchText)
+        searchHistory = SearchHistory.load()
+    }
+
+    /// 多選時浮出的批次操作列：明顯的批量移動與刪除入口。
+    private var batchActionBar: some View {
+        HStack(spacing: 8) {
+            Text("已選 \(sidebarSelection.count) 個")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Menu {
+                Button("未分類") {
+                    model.assignCategory(nil, to: sidebarSelection)
+                }
+                ForEach(model.libraryConfig.categories) { category in
+                    Button(category.name) {
+                        model.assignCategory(category.id, to: sidebarSelection)
+                    }
+                }
+            } label: {
+                Label("移至分類", systemImage: "folder")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            Button(role: .destructive) {
+                confirmBatchDelete = true
+            } label: {
+                Label("刪除", systemImage: "trash")
+            }
+            .buttonStyle(.borderless)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(.bar)
+    }
+
     private var searchResultsSection: some View {
         Section("搜尋結果") {
             let hits = model.search(searchText)
@@ -143,6 +207,7 @@ public struct RootView: View {
                     Button {
                         searchHighlight = hit
                         sidebarSelection = [hit.sessionID]
+                        recordSearch()
                     } label: {
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 6) {
@@ -193,29 +258,24 @@ public struct RootView: View {
         }
     }
 
+    /// 列表只顯示標題與必要徽章；id 與時間等細節收進「詳細資訊」第二層。
     private func sessionRow(_ session: Session) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
-                Text(session.title)
-                    .lineLimit(1)
-                if session.sessionID == model.activeSession?.sessionID,
-                    model.state == .recording || model.state == .paused
-                {
-                    Image(systemName: "record.circle.fill")
-                        .foregroundStyle(.red)
-                        .accessibilityLabel("錄音中")
-                }
+        HStack(spacing: 6) {
+            Text(session.title)
+                .lineLimit(1)
+            if session.sessionID == model.activeSession?.sessionID,
+                model.state == .recording || model.state == .paused
+            {
+                Image(systemName: "record.circle.fill")
+                    .foregroundStyle(.red)
+                    .accessibilityLabel("錄音中")
             }
-            HStack(spacing: 6) {
-                Text(session.sessionID)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if session.source == .imported {
-                    badge("匯入")
-                }
-                if session.recovered {
-                    badge("已恢復")
-                }
+            Spacer()
+            if session.source == .imported {
+                badge("匯入")
+            }
+            if session.recovered {
+                badge("已恢復")
             }
         }
     }
@@ -228,12 +288,14 @@ public struct RootView: View {
             .background(.quaternary, in: Capsule())
     }
 
-    /// 選取數量感知的右鍵選單：單選看細項，多選做批次。
     @ViewBuilder
     private func sessionContextMenu(for ids: Set<String>) -> some View {
         if ids.count == 1, let id = ids.first,
             let session = model.sessions.first(where: { $0.sessionID == id })
         {
+            Button("詳細資訊…") {
+                infoSession = session
+            }
             Button("匯出…") {
                 model.export(session: session)
             }
@@ -266,7 +328,6 @@ public struct RootView: View {
 
     // MARK: - Detail
 
-    /// 選了非進行中的單一 session 看檢視頁，否則看即時畫面。
     @ViewBuilder
     private var detailArea: some View {
         if sidebarSelection.count == 1, let id = sidebarSelection.first,
@@ -276,7 +337,8 @@ public struct RootView: View {
             SessionDetailView(
                 directory: model.directory(for: session),
                 highlightSegmentID: searchHighlight?.sessionID == id
-                    ? searchHighlight?.segmentID : nil
+                    ? searchHighlight?.segmentID : nil,
+                showInspector: $showInspector
             )
             .id(id)
         } else {
@@ -293,7 +355,7 @@ public struct RootView: View {
             ContentUnavailableView {
                 Label("尚未開始記錄", systemImage: "waveform")
             } description: {
-                Text("建立 session 並開始錄音後，即時逐字稿會顯示在這裡。也可以匯入既有音檔。")
+                Text("按工具列的錄音鈕開始（會自動建立新錄音），或匯入既有音檔。")
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if model.transcript.isEmpty && model.volatileText == nil {
@@ -304,8 +366,9 @@ public struct RootView: View {
             } description: {
                 Text(
                     model.state == .recording
-                        ? "等待第一句轉寫結果。"
-                        : "按工具列的開始鈕開始錄音與轉寫。")
+                        ? (model.transcriptionState == .recordingOnly
+                            ? "純錄音模式，不轉寫。" : "等待第一句轉寫結果。")
+                        : "按工具列的錄音鈕開始。")
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -318,8 +381,7 @@ public struct RootView: View {
         }
     }
 
-    /// 單鍵快捷的焦點規則（規格書決議 6）：只在逐字稿區持有焦點時生效，
-    /// 文字輸入框聚焦時不會走到這裡。
+    /// 單鍵快捷的焦點規則（規格書決議 6）：只在逐字稿區持有焦點時生效。
     private func handleMarkerKey(_ characters: String) -> KeyPress.Result {
         guard model.state == .recording || model.state == .paused else { return .ignored }
         switch characters.lowercased() {
@@ -337,7 +399,7 @@ public struct RootView: View {
         return .handled
     }
 
-    // MARK: - Inspector
+    // MARK: - Inspector（即時畫面）
 
     private var inspectorPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -399,52 +461,18 @@ public struct RootView: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
             Button {
-                Task {
-                    await model.newSession()
-                    sidebarSelection = []
-                }
-            } label: {
-                Label("新增 Session", systemImage: "plus")
-            }
-            .disabled(model.state == .recording || model.state == .paused)
-            .help("建立新 session")
-
-            Button {
                 model.importAudio()
             } label: {
                 Label("匯入音檔", systemImage: "square.and.arrow.down")
             }
             .disabled(model.state == .recording || model.state == .paused)
-            .help("匯入音訊檔（caf、wav、m4a、mp3、aiff），可選擇是否轉寫")
+            .help("匯入音訊檔作為新 session，可選擇是否轉寫")
 
             inputDevicePicker
         }
         ToolbarItemGroup {
-            Button {
-                Task { await model.start() }
-            } label: {
-                Label("開始", systemImage: "record.circle")
-            }
-            .disabled(model.activeSession == nil || model.state != .idle)
-            .help("開始錄音")
-
-            if model.state == .paused {
-                Button {
-                    Task { await model.resume() }
-                } label: {
-                    Label("繼續", systemImage: "play.circle")
-                }
-                .help("繼續錄音")
-            } else {
-                Button {
-                    Task { await model.pause() }
-                } label: {
-                    Label("暫停", systemImage: "pause.circle")
-                }
-                .disabled(model.state != .recording)
-                .help("暫停錄音")
-            }
-
+            modePicker
+            recordButton
             Button {
                 Task { await model.stop() }
             } label: {
@@ -467,65 +495,73 @@ public struct RootView: View {
                 Label("浮動逐字稿", systemImage: "macwindow.on.rectangle")
             }
             .help("開啟置頂的即時逐字稿視窗")
-
-            displayOptionsMenu
         }
         ToolbarItemGroup {
-            StatusBadge(text: "本機模式", systemImage: "lock.shield")
-            StatusBadge(
-                text: model.stateDescription.text,
-                systemImage: model.stateDescription.systemImage)
-            if let transcription = model.transcriptionDescription {
-                StatusBadge(text: transcription.text, systemImage: transcription.systemImage)
+            statusArea
+            Button {
+                showInspector.toggle()
+            } label: {
+                Label("右欄", systemImage: "sidebar.trailing")
             }
-            if model.state == .recording || model.state == .paused {
-                Text(model.formattedDuration)
-                    .font(.body.monospacedDigit())
-                    .accessibilityLabel("錄音時長 \(model.formattedDuration)")
-                LevelMeterView(level: model.level)
-            }
+            .help("顯示或隱藏右欄")
         }
     }
 
-    private var displayOptionsMenu: some View {
-        Menu {
-            Section("字級 \(Int(fontSize)) pt") {
-                Button("放大字級") {
-                    fontSize = min(DisplaySettings.fontSizeRange.upperBound, fontSize + 1)
-                }
-                .keyboardShortcut("+", modifiers: .command)
-                Button("縮小字級") {
-                    fontSize = max(DisplaySettings.fontSizeRange.lowerBound, fontSize - 1)
-                }
-                .keyboardShortcut("-", modifiers: .command)
-                Button("重設字級") {
-                    fontSize = DisplaySettings.defaultFontSize
-                }
+    /// 單一錄音鈕：未錄音時開始（自動建立「新錄音N」）、錄音中暫停、暫停中繼續。
+    @ViewBuilder
+    private var recordButton: some View {
+        switch model.state {
+        case .recording:
+            Button {
+                Task { await model.pause() }
+            } label: {
+                Label("暫停", systemImage: "pause.circle.fill")
             }
-            Section("外觀") {
-                Picker("外觀", selection: $appearance) {
-                    Text("跟隨系統").tag("system")
-                    Text("淺色").tag("light")
-                    Text("深色").tag("dark")
-                }
-                .pickerStyle(.inline)
-                .labelsHidden()
+            .help("暫停錄音")
+        case .paused:
+            Button {
+                Task { await model.resume() }
+            } label: {
+                Label("繼續", systemImage: "play.circle.fill")
             }
-            Section("程式庫") {
-                Button("管理分類…") {
-                    showCategoryManager = true
-                }
+            .help("繼續錄音")
+        case .idle, .stopped:
+            Button {
+                Task { await model.startRecording() }
+            } label: {
+                Label("錄音", systemImage: "record.circle")
             }
-            Section("開發") {
-                Toggle("使用 Mock 引擎（下一場生效）", isOn: $useMockEngine)
-            }
-        } label: {
-            Label("顯示選項", systemImage: "textformat.size")
+            .help("開始錄音（自動建立新錄音）")
         }
-        .help("字級、外觀模式、分類與引擎選項")
     }
 
-    /// 輸入裝置選擇。錄音中不可切換。
+    /// 本場模式：邊錄音邊轉寫或純錄音。錄音中不可切換。
+    private var modePicker: some View {
+        Picker("模式", selection: $model.transcribeEnabled) {
+            Label("錄音＋轉寫", systemImage: "waveform.badge.mic").tag(true)
+            Label("純錄音", systemImage: "mic").tag(false)
+        }
+        .pickerStyle(.menu)
+        .disabled(model.state == .recording || model.state == .paused)
+        .help("本次錄音是否同時轉寫（下一場生效）")
+    }
+
+    /// 狀態區：統一以徽章呈現，保持一致性。
+    @ViewBuilder
+    private var statusArea: some View {
+        StatusBadge(text: "本機模式", systemImage: "lock.shield")
+        StatusBadge(
+            text: model.stateDescription.text,
+            systemImage: model.stateDescription.systemImage)
+        if let transcription = model.transcriptionDescription {
+            StatusBadge(text: transcription.text, systemImage: transcription.systemImage)
+        }
+        if model.state == .recording || model.state == .paused {
+            StatusBadge(text: model.formattedDuration, systemImage: "timer")
+            LevelMeterView(level: model.level)
+        }
+    }
+
     private var inputDevicePicker: some View {
         Picker("輸入裝置", selection: $model.selectedDeviceUID) {
             Text("系統預設輸入").tag(String?.none)
@@ -535,7 +571,7 @@ public struct RootView: View {
         }
         .pickerStyle(.menu)
         .disabled(model.state == .recording || model.state == .paused)
-        .help("選擇音訊輸入裝置（建立 session 前選擇）")
+        .help("選擇音訊輸入裝置（下一場生效）")
     }
 }
 

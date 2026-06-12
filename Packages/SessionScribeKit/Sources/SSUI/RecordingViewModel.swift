@@ -30,6 +30,14 @@ public final class RecordingViewModel {
     public private(set) var inputDevices: [AudioInputDevice] = []
     public var selectedDeviceUID: String?
 
+    /// 本場模式：邊錄音邊轉寫或純錄音（工具列模式選擇，跨啟動記憶）。
+    public var transcribeEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(transcribeEnabled, forKey: Self.transcribeEnabledKey)
+        }
+    }
+    private static let transcribeEnabledKey = "transcribeEnabled"
+
     public private(set) var transcript: [TranscriptSegment] = []
     public private(set) var volatileText: String?
     public private(set) var markers: [Marker] = []
@@ -62,6 +70,8 @@ public final class RecordingViewModel {
         let root = rootDirectory ?? Self.defaultSessionsRoot()
         sessionsRoot = root
         library = SessionLibrary(rootDirectory: root)
+        transcribeEnabled =
+            UserDefaults.standard.object(forKey: Self.transcribeEnabledKey) as? Bool ?? true
     }
 
     /// app container 內的 Application Support/SessionScribe/Sessions。
@@ -192,7 +202,7 @@ public final class RecordingViewModel {
             let deviceName = inputDevices.first { $0.id == selectedDeviceUID }?.name
             var session = Session(
                 sessionID: Session.makeID(),
-                title: "新場次 \(Self.titleDateFormatter.string(from: Date()))",
+                title: Self.nextRecordingTitle(existing: sessions),
                 templateID: "thesis_defense",
                 locale: "zh-TW",
                 audioInput: deviceName ?? "系統預設輸入",
@@ -212,11 +222,13 @@ public final class RecordingViewModel {
             state = .idle
 
             // 引擎降級鏈：SpeechAnalyzer、SFSpeechRecognizer、純錄音。
+            // 使用者選了純錄音模式時直接跳過引擎選擇。
             transcriptionState = .preparing
             let useMock = UserDefaults.standard.bool(forKey: DisplaySettings.useMockEngineKey)
-            if let engine = await EngineSelector.selectAndPrepare(
-                from: EngineSelector.defaultChain(useMock: useMock),
-                locale: Locale(identifier: session.locale))
+            if transcribeEnabled,
+                let engine = await EngineSelector.selectAndPrepare(
+                    from: EngineSelector.defaultChain(useMock: useMock),
+                    locale: Locale(identifier: session.locale))
             {
                 let coordinator = TranscriptionCoordinator(engine: engine, store: store)
                 self.coordinator = coordinator
@@ -238,6 +250,14 @@ public final class RecordingViewModel {
         } catch {
             errorMessage = "建立 session 失敗：\(error.localizedDescription)"
         }
+    }
+
+    /// 工具列單一錄音鈕的入口：沒有進行中的 session 就先建一個再開始。
+    public func startRecording() async {
+        if controller == nil || state == .stopped {
+            await newSession()
+        }
+        await start()
     }
 
     public func start() async {
@@ -546,12 +566,14 @@ public final class RecordingViewModel {
         }
     }
 
-    private static let titleDateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_TW")
-        formatter.dateFormat = "yyyy-MM-dd HH:mm"
-        return formatter
-    }()
+    /// 「新錄音1、新錄音2…」遞增命名：取既有同模式標題的最大編號加一。
+    static func nextRecordingTitle(existing sessions: [Session]) -> String {
+        let numbers = sessions.compactMap { session -> Int? in
+            guard let match = session.title.wholeMatch(of: /新錄音(\d+)/) else { return nil }
+            return Int(match.1)
+        }
+        return "新錄音\((numbers.max() ?? 0) + 1)"
+    }
 
     private static var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
