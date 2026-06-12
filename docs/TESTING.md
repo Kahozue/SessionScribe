@@ -1,6 +1,6 @@
 # SessionScribe 測試方法
 
-版本：自 M2 起累積（2026-06-12 建立）
+版本：自 M2 起累積（2026-06-12 建立，2026-06-13 補 M3 至 M7）
 對應規格：`docs/SPEC.md` 第十三節
 
 ## 一、單元測試
@@ -25,6 +25,19 @@ swift test
 | ChunkedAudioWriter | 分塊輪替、媒體時間連續性、16-bit 量化誤差、輪替即落盤 |
 | AudioManifestRecovery | manifest 遺失重建、孤兒 chunk 補回、損毀 chunk 跳過 |
 
+| MarkerSegmentAssociation、MarkerService | 時間窗關聯、依序編號、快照、即時落盤 |
+| MarkdownExporter、CSVExporter、JSONExporter、ExportService | 輸出格式精確比對、RFC 4180 跳脫、子集匯出 |
+| MockTranscriptionEngine | 腳本驅動 finalize、漸進 volatile、錯誤注入 |
+| TranscriptionCoordinator | 引擎失敗隔離（ASR 失敗錄音不中斷）、先落盤再轉發 |
+| EngineSelector | 降級鏈挑選、prepare 失敗降級、全不可用回 nil |
+| 實機引擎可用性 | AppleSpeechEngine 對 zh-TW 非 unsupported（spike 佐證） |
+| Session source、category_id | 舊檔缺欄位相容、round-trip |
+| AudioImporter | wav 轉 CAF chunks、塊長精確、失敗清除半成品、不被恢復掃描誤判 |
+| OfflineTranscriber | 跨 chunk 媒體時間連續、segments 落盤 |
+| AudioManifest.locate | 跨塊定位、邊界歸屬、超界 nil |
+| LibraryConfig、SessionLibrary 批次 | 分類 round-trip、批次指派與刪除 |
+| TranscriptSearchService | 跨 session 命中、marker note、大小寫、空查詢 |
+
 音訊測試使用合成 buffer（固定值與正弦波），不經過麥克風；寫出的 CAF 以
 `AVAudioFile` 讀回驗證 frame 數與樣本值。
 
@@ -47,7 +60,24 @@ swift test
 7. **輸入裝置**：接上外接麥克風，於 toolbar 選單切換後建立 session，
    metadata.json 的 `audio_input` 應記錄裝置名稱。
 
-## 三、長時測試（現場前）
+## 三、M3 至 M7 實機驗證清單（手動）
+
+1. **轉寫與標記**：新場次、開始錄音、說話。逐字稿出現 volatile 淡色尾段並就地
+   替換為 finalized 卡片；逐字稿區點一下取得焦點後按 Q/R/S/A 建立標記；
+   游標在任何輸入框時單鍵不得觸發；Cmd+1 至 4 全域可用；快速連按不丟標記。
+2. **引擎降級**：顯示選項開啟 Mock 引擎，下一場用 Mock 腳本跑完整 UI；
+   關閉後新場次狀態徽章應顯示 SpeechAnalyzer。
+3. **匯出**：停止後按匯出選資料夾，確認 transcript.md、markers.csv、
+   session.json、兩個 jsonl 副本；逐字稿多選數段後 Inspector 匯出選取。
+4. **浮動視窗**：開啟浮動逐字稿，視窗應置頂、可調大小，字級按鈕與主視窗同步。
+5. **外觀**：深淺色切換下檢查逐字稿、標記、徽章可讀性。
+6. **匯入與檢視**：匯入一個 m4a，選立即轉寫；完成後檢視頁播放，
+   當前段落應放大置中（歌詞效果），點任一段跳轉播放位置，時間一致。
+7. **搜尋**：側欄搜尋逐字稿字詞，點結果應跳到該 session 檢視頁並定位該段。
+8. **分類與批次**：建立分類、把數個 session 多選移入、隱藏分類後側欄消失、
+   批次刪除有確認且可從垃圾桶復原。
+
+## 四、長時測試（現場前）
 
 兩小時級錄音留待口試前驗證：磁碟用量約 350MB 一小時、記憶體無顯著成長、
 chunk 輪替每五分鐘一次無爆音斷點。

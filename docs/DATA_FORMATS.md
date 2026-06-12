@@ -53,6 +53,8 @@
 | `recovered` | Bool | 曾經崩潰恢復 |
 | `notes` | String | 使用者備註 |
 | `app_version` | String | 寫入時的 app 版本 |
+| `source` | String | `recorded` 或 `imported`（規格 1.1 第 6 項）；舊檔缺欄位視為 `recorded` |
+| `category_id` | String 或 null | 分類 id（規格 1.1 第 7 項）；null 或缺欄位即未分類 |
 
 寫入一律經 `Data.write(options: .atomic)`，崩潰瞬間不會留下半截 metadata。
 
@@ -108,3 +110,20 @@
 3. `created_at` 取檔案建立時間（整秒）。重建結果原子落盤。
 
 App 啟動的崩潰恢復流程：`SessionLibrary.recoverCrashedSessions` 標記 metadata 後，對每個被恢復的 session 執行 manifest 重建。
+
+匯入音檔（`AudioImporter`）走同一套格式：來源音檔解碼後轉成 canonical PCM CAF chunks 與 manifest，讀取量對齊 chunk 邊界使塊長與設定值精確一致；metadata 的 `source` 為 `imported` 且 `ended_at` 於匯入完成時落盤。
+
+## 九、library.json（sessions 根目錄，M7）
+
+對應型別 `LibraryConfig` 與 `SessionCategory`。分類定義存於程式庫層，session 只持有 `category_id` 參照：
+
+```json
+{
+  "schema_version": 1,
+  "categories": [
+    { "id": "BC59…", "name": "口試", "hidden": false, "order": 0 }
+  ]
+}
+```
+
+讀取時依 `order` 排序；檔案不存在回傳空設定。刪除分類時其下 session 的 `category_id` 改回 null；session 引用了已不存在的分類視為未分類，不會憑空消失。批次刪除 session 優先移到垃圾桶（可復原），失敗才直接移除。

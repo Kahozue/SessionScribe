@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SessionScribe app icon：深藍漸層圓角方塊上的白色波形，
+     中央最高的一根染成琥珀色，代表「被標記的時刻」。
+     1024 畫布、100 邊距、186 圓角，符合 macOS 圖示比例。 -->
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4759E4"/>
+      <stop offset="1" stop-color="#1B2270"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFD166"/>
+      <stop offset="1" stop-color="#F4A91F"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bg)"/>
+  <!-- 波形：以 512 為中心對稱的圓角直條 -->
+  <g fill="#FFFFFF">
+    <rect x="232" y="452" width="56" height="120" rx="28"/>
+    <rect x="320" y="402" width="56" height="220" rx="28"/>
+    <rect x="408" y="332" width="56" height="360" rx="28"/>
+    <rect x="584" y="332" width="56" height="360" rx="28"/>
+    <rect x="672" y="402" width="56" height="220" rx="28"/>
+    <rect x="760" y="452" width="56" height="120" rx="28"/>
+  </g>
+  <!-- 被標記的時刻：中央最高的琥珀色條與其上的標記點 -->
+  <rect x="496" y="252" width="56" height="520" rx="28" fill="url(#amber)"/>
+  <circle cx="524" cy="196" r="34" fill="url(#amber)"/>
+</svg>

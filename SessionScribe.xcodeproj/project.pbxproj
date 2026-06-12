@@ -9,12 +9,14 @@
 /* Begin PBXBuildFile section */
 		12290F1A01242B393BC69E98 /* SessionScribeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C0A30E4C32B42319176EDAC /* SessionScribeApp.swift */; };
 		26FA4A9AD0EBD6CAE84E3BFA /* SSUI in Frameworks */ = {isa = PBXBuildFile; productRef = 240AF3B41051E326FC4620B6 /* SSUI */; };
+		8F7DBFDC622881B78C62E8D2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D1E0C8A25ED748D25E9D5D0F /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		03B204573E37AF4C29461E2E /* SessionScribe.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SessionScribe.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		688F542E721279DC5E9A7319 /* SessionScribe.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SessionScribe.entitlements; sourceTree = "<group>"; };
 		9C0A30E4C32B42319176EDAC /* SessionScribeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionScribeApp.swift; sourceTree = "<group>"; };
+		D1E0C8A25ED748D25E9D5D0F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		E33E29E3FA8C0C66D293F281 /* SessionScribeKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SessionScribeKit; path = Packages/SessionScribeKit; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
@@ -30,6 +32,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		026A5C498880723CC2EC066A /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				D1E0C8A25ED748D25E9D5D0F /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
 		1578DD46BC2A6185055AA79F /* Packages */ = {
 			isa = PBXGroup;
 			children = (
@@ -51,6 +61,7 @@
 			children = (
 				688F542E721279DC5E9A7319 /* SessionScribe.entitlements */,
 				9C0A30E4C32B42319176EDAC /* SessionScribeApp.swift */,
+				026A5C498880723CC2EC066A /* Resources */,
 			);
 			path = SessionScribe;
 			sourceTree = "<group>";
@@ -72,6 +83,7 @@
 			buildConfigurationList = 189BA8E86F2E605BA271E2C8 /* Build configuration list for PBXNativeTarget "SessionScribe" */;
 			buildPhases = (
 				9CA428AE5DCE6FBD7993B504 /* Sources */,
+				F27C8C5B6457247EC6B5AB47 /* Resources */,
 				94D6F89C8456F96B7FF13AE4 /* Frameworks */,
 			);
 			buildRules = (
@@ -121,6 +133,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		F27C8C5B6457247EC6B5AB47 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8F7DBFDC622881B78C62E8D2 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		9CA428AE5DCE6FBD7993B504 /* Sources */ = {

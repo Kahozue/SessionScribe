@@ -21,6 +21,7 @@ targets:
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         GENERATE_INFOPLIST_FILE: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "SessionScribe 需要使用麥克風錄製 session 音訊，並在本機進行語音轉寫。"
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "SessionScribe 在本機進行語音轉寫（備援引擎 SFSpeechRecognizer 需要此權限），不會將音訊傳到網路。"
         CODE_SIGN_STYLE: Manual
