@@ -1,0 +1,29 @@
+name: SessionScribe
+options:
+  bundleIdPrefix: io.github.kahozue
+  deploymentTarget:
+    macOS: "26.0"
+packages:
+  SessionScribeKit:
+    path: Packages/SessionScribeKit
+targets:
+  SessionScribe:
+    type: application
+    platform: macOS
+    sources:
+      - SessionScribe
+    dependencies:
+      - package: SessionScribeKit
+        product: SSUI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.kahozue.SessionScribe
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "SessionScribe 需要使用麥克風錄製 session 音訊，並在本機進行語音轉寫。"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_ENTITLEMENTS: SessionScribe/SessionScribe.entitlements
+        ENABLE_HARDENED_RUNTIME: NO
+        SWIFT_VERSION: "6.0"
