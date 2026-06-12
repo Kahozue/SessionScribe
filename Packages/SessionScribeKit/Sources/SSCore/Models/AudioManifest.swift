@@ -29,6 +29,33 @@ public struct AudioManifest: Codable, Equatable, Sendable {
     }
 }
 
+extension AudioManifest {
+
+    public struct ChunkLocation: Equatable, Sendable {
+        public let chunkIndex: Int
+        public let offsetSeconds: Double
+    }
+
+    public var totalDurationSeconds: Double {
+        guard let last = chunks.last else { return 0 }
+        return last.startSeconds + last.durationSeconds
+    }
+
+    /// 媒體時間定位到 chunk 與塊內偏移（播放跳轉用）。
+    /// 邊界時間歸屬後一塊；超出總長回傳 nil。
+    public func locate(seconds: Double) -> ChunkLocation? {
+        for (index, chunk) in chunks.enumerated() {
+            if seconds >= chunk.startSeconds,
+                seconds < chunk.startSeconds + chunk.durationSeconds
+            {
+                return ChunkLocation(
+                    chunkIndex: index, offsetSeconds: seconds - chunk.startSeconds)
+            }
+        }
+        return nil
+    }
+}
+
 /// manifest 內一個 chunk 的索引項。時間為媒體時間秒數，與 MediaClock 同軸。
 public struct AudioChunk: Codable, Equatable, Sendable {
     public var file: String

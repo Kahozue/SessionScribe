@@ -4,6 +4,7 @@ import Observation
 import SSAudio
 import SSCore
 import SSTranscription
+import UniformTypeIdentifiers
 
 /// 錄音與轉寫流程的 view model：持有 SessionController、LiveRecordingPipeline、
 /// TranscriptionCoordinator 與 MarkerService，把狀態、逐字稿、標記、音量
@@ -21,8 +22,10 @@ public final class RecordingViewModel {
     public private(set) var level: AudioLevel = .silent
     public var errorMessage: String?
     public var diskSpaceWarning: String?
-    public var exportMessage: String?
+    public var infoMessage: String?
     public var micPermissionDenied = false
+    /// 剛匯入、等使用者決定是否立即轉寫的 session。
+    public var pendingTranscription: Session?
 
     public private(set) var inputDevices: [AudioInputDevice] = []
     public var selectedDeviceUID: String?
@@ -30,6 +33,7 @@ public final class RecordingViewModel {
     public private(set) var transcript: [TranscriptSegment] = []
     public private(set) var volatileText: String?
     public private(set) var markers: [Marker] = []
+    public private(set) var libraryConfig = LibraryConfig()
 
     public enum TranscriptionState: Equatable {
         case none
@@ -81,10 +85,100 @@ public final class RecordingViewModel {
                 _ = try? AudioManifestRecovery.rebuild(audioDirectory: audioDirectory)
             }
             sessions = try library.sessions()
+            libraryConfig = try LibraryConfigFile.read(from: sessionsRoot)
         } catch {
             errorMessage = "載入 session 列表失敗：\(error.localizedDescription)"
         }
         inputDevices = AudioInputDevices.available()
+    }
+
+    // MARK: - 分類與批次（規格 1.1 第 7 項）
+
+    /// 依分類分組；隱藏分類的 session 不出現在側欄。
+    public var visibleCategories: [SessionCategory] {
+        libraryConfig.categories.filter { !$0.hidden }
+    }
+
+    public func sessions(in categoryID: String?) -> [Session] {
+        sessions.filter { $0.categoryID == categoryID }
+    }
+
+    /// 未分類的 session；分類定義已不存在者也算未分類，不讓 session 憑空消失。
+    public var uncategorizedSessions: [Session] {
+        sessions.filter { session in
+            guard let categoryID = session.categoryID else { return true }
+            return !libraryConfig.categories.contains { $0.id == categoryID }
+        }
+    }
+
+    public func addCategory(name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        let nextOrder = (libraryConfig.categories.map(\.order).max() ?? -1) + 1
+        libraryConfig.categories.append(SessionCategory(name: trimmed, order: nextOrder))
+        persistConfig()
+    }
+
+    public func renameCategory(id: String, to name: String) {
+        guard let index = libraryConfig.categories.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        libraryConfig.categories[index].name = name
+        persistConfig()
+    }
+
+    public func toggleCategoryHidden(id: String) {
+        guard let index = libraryConfig.categories.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        libraryConfig.categories[index].hidden.toggle()
+        persistConfig()
+    }
+
+    /// 刪除分類定義；其下 session 移回未分類。
+    public func deleteCategory(id: String) {
+        let affected = Set(sessions.filter { $0.categoryID == id }.map(\.sessionID))
+        do {
+            try library.assign(categoryID: nil, to: affected)
+            libraryConfig.categories.removeAll { $0.id == id }
+            persistConfig()
+            sessions = try library.sessions()
+        } catch {
+            errorMessage = "刪除分類失敗：\(error.localizedDescription)"
+        }
+    }
+
+    public func assignCategory(_ categoryID: String?, to sessionIDs: Set<String>) {
+        do {
+            try library.assign(categoryID: categoryID, to: sessionIDs)
+            sessions = try library.sessions()
+        } catch {
+            errorMessage = "移動分類失敗：\(error.localizedDescription)"
+        }
+    }
+
+    public func deleteSessions(_ sessionIDs: Set<String>) {
+        do {
+            try library.delete(sessionIDs: sessionIDs)
+            sessions = try library.sessions()
+            infoMessage = "已刪除 \(sessionIDs.count) 個 session（移至垃圾桶）。"
+        } catch {
+            errorMessage = "刪除失敗：\(error.localizedDescription)"
+        }
+    }
+
+    private func persistConfig() {
+        do {
+            try LibraryConfigFile.write(libraryConfig, to: sessionsRoot)
+        } catch {
+            errorMessage = "儲存分類設定失敗：\(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - 跨逐字稿搜尋（規格 1.1 第 9 項）
+
+    public func search(_ query: String) -> [SearchHit] {
+        (try? TranscriptSearchService(library: library).search(query)) ?? []
     }
 
     // MARK: - Session 控制
@@ -253,7 +347,7 @@ public final class RecordingViewModel {
                 try await ExportService.export(
                     store: store, session: session,
                     to: destination.appending(path: "\(session.sessionID)_export"))
-                exportMessage = "匯出完成：\(session.sessionID)_export"
+                infoMessage = "匯出完成：\(session.sessionID)_export"
             } catch {
                 errorMessage = "匯出失敗：\(error.localizedDescription)"
             }
@@ -284,9 +378,59 @@ public final class RecordingViewModel {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try Data(markdown.utf8).write(to: url, options: .atomic)
-            exportMessage = "已匯出 \(chosen.count) 個選取段落"
+            infoMessage = "已匯出 \(chosen.count) 個選取段落"
         } catch {
             errorMessage = "匯出失敗：\(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - 匯入（規格 1.1 第 6 項）
+
+    /// 選擇音檔匯入為 imported session；完成後詢問是否立即轉寫。
+    public func importAudio() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = AudioImporter.supportedExtensions
+            .compactMap { UTType(filenameExtension: $0) }
+        panel.prompt = "匯入"
+        panel.message = "選擇要匯入的音訊檔"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task {
+            do {
+                let session = try await AudioImporter.importFile(
+                    at: url, into: sessionsRoot, appVersion: Self.appVersion)
+                sessions = try library.sessions()
+                pendingTranscription = session
+            } catch {
+                errorMessage = "匯入失敗：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// 對匯入的 session 做離線轉寫（背景執行，完成後提示）。
+    public func transcribeImported(_ session: Session) {
+        Task {
+            let store = SessionStore(directory: library.directory(for: session.sessionID))
+            let useMock = UserDefaults.standard.bool(forKey: DisplaySettings.useMockEngineKey)
+            guard
+                let engine = await EngineSelector.selectAndPrepare(
+                    from: EngineSelector.defaultChain(useMock: useMock),
+                    locale: Locale(identifier: session.locale))
+            else {
+                errorMessage = "沒有可用的轉寫引擎。"
+                return
+            }
+            let coordinator = TranscriptionCoordinator(engine: engine, store: store)
+            do {
+                try await OfflineTranscriber.transcribe(
+                    sessionDirectory: store.directory, session: session,
+                    coordinator: coordinator)
+                let count = (try? await store.loadSegments())?.count ?? 0
+                infoMessage = "離線轉寫完成：\(session.title)，共 \(count) 段。"
+            } catch {
+                errorMessage = "離線轉寫失敗：\(error.localizedDescription)"
+            }
         }
     }
 

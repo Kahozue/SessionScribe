@@ -3,12 +3,17 @@ import SSAudio
 import SSCore
 import SwiftUI
 
-/// App 主視窗的三欄殼層：sidebar（session 列表）、main（即時逐字稿）、
-/// inspector（標記按鈕、事件列表、選取匯出）。
+/// App 主視窗的三欄殼層：sidebar（搜尋、分類、session 列表、多選）、
+/// main（即時逐字稿或錄音檢視頁）、inspector（標記與選取匯出）。
 public struct RootView: View {
     @Bindable private var model: RecordingViewModel
     @State private var showInspector = true
     @State private var selection: Set<String> = []
+    @State private var sidebarSelection: Set<String> = []
+    @State private var searchText = ""
+    @State private var searchHighlight: SearchHit?
+    @State private var showCategoryManager = false
+    @State private var confirmBatchDelete = false
     @FocusState private var transcriptFocused: Bool
     @Environment(\.openWindow) private var openWindow
     @AppStorage(DisplaySettings.fontSizeKey)
@@ -26,15 +31,15 @@ public struct RootView: View {
         NavigationSplitView {
             sidebar
         } detail: {
-            transcriptArea
-                .inspector(isPresented: $showInspector) {
-                    inspectorPanel
-                }
+            detailArea
         }
         .toolbar { toolbarContent }
         .navigationTitle("SessionScribe")
         .task { await model.onLaunch() }
         .preferredColorScheme(DisplaySettings.colorScheme(for: appearance))
+        .sheet(isPresented: $showCategoryManager) {
+            CategoryManagerView(model: model)
+        }
         .alert("需要麥克風權限", isPresented: $model.micPermissionDenied) {
             Button("開啟系統設定") {
                 NSWorkspace.shared.open(MicrophonePermission.settingsURL)
@@ -54,14 +59,14 @@ public struct RootView: View {
             Text(model.diskSpaceWarning ?? "")
         }
         .alert(
-            "匯出",
+            "完成",
             isPresented: Binding(
-                get: { model.exportMessage != nil },
-                set: { if !$0 { model.exportMessage = nil } })
+                get: { model.infoMessage != nil },
+                set: { if !$0 { model.infoMessage = nil } })
         ) {
             Button("好", role: .cancel) {}
         } message: {
-            Text(model.exportMessage ?? "")
+            Text(model.infoMessage ?? "")
         }
         .alert(
             "發生錯誤",
@@ -73,24 +78,119 @@ public struct RootView: View {
         } message: {
             Text(model.errorMessage ?? "")
         }
+        .confirmationDialog(
+            "刪除選取的 \(sidebarSelection.count) 個 session？",
+            isPresented: $confirmBatchDelete,
+            titleVisibility: .visible
+        ) {
+            Button("刪除（移至垃圾桶）", role: .destructive) {
+                model.deleteSessions(sidebarSelection)
+                sidebarSelection = []
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("錄音、逐字稿與標記會一併移至垃圾桶，可從垃圾桶復原。")
+        }
+        .confirmationDialog(
+            "匯入完成",
+            isPresented: Binding(
+                get: { model.pendingTranscription != nil },
+                set: { if !$0 { model.pendingTranscription = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("立即離線轉寫") {
+                if let session = model.pendingTranscription {
+                    model.transcribeImported(session)
+                    sidebarSelection = [session.sessionID]
+                }
+            }
+            Button("稍後再說", role: .cancel) {
+                if let session = model.pendingTranscription {
+                    sidebarSelection = [session.sessionID]
+                }
+            }
+        } message: {
+            Text("「\(model.pendingTranscription?.title ?? "")」已匯入。要現在轉寫成逐字稿嗎？之後也可以在檢視頁啟動轉寫。")
+        }
     }
 
     // MARK: - Sidebar
 
     private var sidebar: some View {
-        List {
-            Section("Sessions") {
-                if model.sessions.isEmpty {
-                    Text("尚無 session")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(model.sessions) { session in
-                        sessionRow(session)
+        List(selection: $sidebarSelection) {
+            if !searchText.trimmingCharacters(in: .whitespaces).isEmpty {
+                searchResultsSection
+            } else {
+                sessionSections
+            }
+        }
+        .searchable(text: $searchText, placement: .sidebar, prompt: "搜尋逐字稿與標記")
+        .contextMenu(forSelectionType: String.self) { ids in
+            sessionContextMenu(for: ids)
+        }
+        .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 340)
+    }
+
+    /// 跨逐字稿搜尋結果（規格 1.1 第 9 項）。
+    private var searchResultsSection: some View {
+        Section("搜尋結果") {
+            let hits = model.search(searchText)
+            if hits.isEmpty {
+                Text("沒有符合「\(searchText)」的內容")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(hits) { hit in
+                    Button {
+                        searchHighlight = hit
+                        sidebarSelection = [hit.sessionID]
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Image(
+                                    systemName: hit.markerID != nil
+                                        ? "bookmark.fill" : "text.bubble")
+                                .foregroundStyle(.secondary)
+                                Text(hit.sessionTitle)
+                                    .font(.callout)
+                                    .lineLimit(1)
+                                Spacer()
+                                Text(TimeFormatting.hms(hit.mediaSeconds))
+                                    .font(.caption2.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text(hit.snippet)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
                     }
+                    .buttonStyle(.plain)
                 }
             }
         }
-        .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
+    }
+
+    @ViewBuilder
+    private var sessionSections: some View {
+        Section("未分類") {
+            if model.uncategorizedSessions.isEmpty {
+                Text("尚無 session")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(model.uncategorizedSessions) { session in
+                    sessionRow(session)
+                        .tag(session.sessionID)
+                }
+            }
+        }
+        ForEach(model.visibleCategories) { category in
+            Section(category.name) {
+                ForEach(model.sessions(in: category.id)) { session in
+                    sessionRow(session)
+                        .tag(session.sessionID)
+                }
+            }
+        }
     }
 
     private func sessionRow(_ session: Session) -> some View {
@@ -110,26 +210,82 @@ public struct RootView: View {
                 Text(session.sessionID)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if session.source == .imported {
+                    badge("匯入")
+                }
                 if session.recovered {
-                    Text("已恢復")
-                        .font(.caption2)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(.quaternary, in: Capsule())
+                    badge("已恢復")
                 }
             }
         }
-        .contextMenu {
+    }
+
+    private func badge(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .background(.quaternary, in: Capsule())
+    }
+
+    /// 選取數量感知的右鍵選單：單選看細項，多選做批次。
+    @ViewBuilder
+    private func sessionContextMenu(for ids: Set<String>) -> some View {
+        if ids.count == 1, let id = ids.first,
+            let session = model.sessions.first(where: { $0.sessionID == id })
+        {
             Button("匯出…") {
                 model.export(session: session)
             }
             Button("在 Finder 顯示") {
                 NSWorkspace.shared.activateFileViewerSelecting([model.directory(for: session)])
             }
+            Divider()
+        }
+        if !ids.isEmpty {
+            Menu("移至分類") {
+                Button("未分類") {
+                    model.assignCategory(nil, to: ids)
+                }
+                ForEach(model.libraryConfig.categories) { category in
+                    Button(category.name) {
+                        model.assignCategory(category.id, to: ids)
+                    }
+                }
+            }
+            Button("刪除\(ids.count > 1 ? "選取的 \(ids.count) 個" : "")…", role: .destructive) {
+                sidebarSelection = ids
+                confirmBatchDelete = true
+            }
+        }
+        Divider()
+        Button("管理分類…") {
+            showCategoryManager = true
         }
     }
 
-    // MARK: - Main
+    // MARK: - Detail
+
+    /// 選了非進行中的單一 session 看檢視頁，否則看即時畫面。
+    @ViewBuilder
+    private var detailArea: some View {
+        if sidebarSelection.count == 1, let id = sidebarSelection.first,
+            id != model.activeSession?.sessionID,
+            let session = model.sessions.first(where: { $0.sessionID == id })
+        {
+            SessionDetailView(
+                directory: model.directory(for: session),
+                highlightSegmentID: searchHighlight?.sessionID == id
+                    ? searchHighlight?.segmentID : nil
+            )
+            .id(id)
+        } else {
+            transcriptArea
+                .inspector(isPresented: $showInspector) {
+                    inspectorPanel
+                }
+        }
+    }
 
     @ViewBuilder
     private var transcriptArea: some View {
@@ -137,7 +293,7 @@ public struct RootView: View {
             ContentUnavailableView {
                 Label("尚未開始記錄", systemImage: "waveform")
             } description: {
-                Text("建立 session 並開始錄音後，即時逐字稿會顯示在這裡。")
+                Text("建立 session 並開始錄音後，即時逐字稿會顯示在這裡。也可以匯入既有音檔。")
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if model.transcript.isEmpty && model.volatileText == nil {
@@ -243,12 +399,23 @@ public struct RootView: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
             Button {
-                Task { await model.newSession() }
+                Task {
+                    await model.newSession()
+                    sidebarSelection = []
+                }
             } label: {
                 Label("新增 Session", systemImage: "plus")
             }
             .disabled(model.state == .recording || model.state == .paused)
             .help("建立新 session")
+
+            Button {
+                model.importAudio()
+            } label: {
+                Label("匯入音檔", systemImage: "square.and.arrow.down")
+            }
+            .disabled(model.state == .recording || model.state == .paused)
+            .help("匯入音訊檔（caf、wav、m4a、mp3、aiff），可選擇是否轉寫")
 
             inputDevicePicker
         }
@@ -344,13 +511,18 @@ public struct RootView: View {
                 .pickerStyle(.inline)
                 .labelsHidden()
             }
+            Section("程式庫") {
+                Button("管理分類…") {
+                    showCategoryManager = true
+                }
+            }
             Section("開發") {
                 Toggle("使用 Mock 引擎（下一場生效）", isOn: $useMockEngine)
             }
         } label: {
             Label("顯示選項", systemImage: "textformat.size")
         }
-        .help("字級、外觀模式與引擎選項")
+        .help("字級、外觀模式、分類與引擎選項")
     }
 
     /// 輸入裝置選擇。錄音中不可切換。
