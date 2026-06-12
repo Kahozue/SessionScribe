@@ -90,6 +90,21 @@
 3. `ended_at` 保持 null（真實結束時間未知，不偽造）；`recovered` 旗標保證掃描冪等，重啟不重複回報。
 4. 已保存的 segments 與 markers 經 `SessionStore` 照常載入；audio manifest 重建（掃描 audio/ 目錄補孤兒 chunk）於 M2 隨 ChunkedAudioWriter 實作。
 
-## 八、audio/manifest.json（M2 實作）
+## 八、audio/manifest.json 與 chunk 檔（M2 實作）
 
-格式預告，依規格書第八節：`schema_version`、`sample_rate`、`channels`、`chunks[]`（每個 chunk 的 `file`、`start_seconds`、`duration_seconds`、`created_at`）。M1 僅建立 `audio/` 目錄。
+對應型別 `AudioManifest` 與 `AudioChunk`。欄位：`schema_version`、`sample_rate`、`channels`、`chunks[]`（每個 chunk 的 `file`、`start_seconds`、`duration_seconds`、`created_at`）。
+
+寫入語義（`ChunkedAudioWriter`）：
+
+1. chunk 檔名 `chunk_0001.caf` 起依序遞增，16-bit 整數 PCM CAF。
+2. buffer 不跨檔切割：寫滿目標長度（預設 300 秒，`AudioDefaults.chunkDuration`）後輪替，chunk 實際長度可能略超過設定值。
+3. manifest 只記錄已完成的 chunk，每次輪替即原子落盤；寫入中的 chunk 是孤兒檔。
+4. 停止錄音時收尾當前 chunk 並完成索引，不做破壞性合併。
+
+重建語義（`AudioManifestRecovery.rebuild`）：
+
+1. 依檔名順序掃描 `chunk_*.caf`，以 `AVAudioFile` 讀出 frame 數推得長度，`start_seconds` 為前序 chunk 長度的累計。
+2. 孤兒 chunk 由此補回索引；完全無法讀取的損毀 chunk 跳過，不阻斷恢復。
+3. `created_at` 取檔案建立時間（整秒）。重建結果原子落盤。
+
+App 啟動的崩潰恢復流程：`SessionLibrary.recoverCrashedSessions` 標記 metadata 後，對每個被恢復的 session 執行 manifest 重建。
