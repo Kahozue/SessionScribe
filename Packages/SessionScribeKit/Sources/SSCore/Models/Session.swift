@@ -17,6 +17,10 @@ public struct Session: Codable, Equatable, Sendable, Identifiable {
     public var recovered: Bool
     public var notes: String
     public var appVersion: String
+    /// 來源（規格 1.1 第 6 項）：錄音或匯入。舊檔缺欄位視為 recorded。
+    public var source: SessionSource
+    /// 分類（規格 1.1 第 7 項）：nil 即未分類。舊檔缺欄位視為未分類。
+    public var categoryID: String?
 
     public var id: String { sessionID }
 
@@ -34,7 +38,9 @@ public struct Session: Codable, Equatable, Sendable, Identifiable {
         audioInput: String = "",
         recovered: Bool = false,
         notes: String = "",
-        appVersion: String
+        appVersion: String,
+        source: SessionSource = .recorded,
+        categoryID: String? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.sessionID = sessionID
@@ -50,6 +56,29 @@ public struct Session: Codable, Equatable, Sendable, Identifiable {
         self.recovered = recovered
         self.notes = notes
         self.appVersion = appVersion
+        self.source = source
+        self.categoryID = categoryID
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        sessionID = try container.decode(String.self, forKey: .sessionID)
+        title = try container.decode(String.self, forKey: .title)
+        templateID = try container.decode(String.self, forKey: .templateID)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        startedAt = try container.decodeIfPresent(Date.self, forKey: .startedAt)
+        endedAt = try container.decodeIfPresent(Date.self, forKey: .endedAt)
+        locale = try container.decode(String.self, forKey: .locale)
+        asrEngine = try container.decode(String.self, forKey: .asrEngine)
+        privacyMode = try container.decode(PrivacyMode.self, forKey: .privacyMode)
+        audioInput = try container.decode(String.self, forKey: .audioInput)
+        recovered = try container.decode(Bool.self, forKey: .recovered)
+        notes = try container.decode(String.self, forKey: .notes)
+        appVersion = try container.decode(String.self, forKey: .appVersion)
+        // 舊 metadata 無 source 欄位：視為 recorded，schema_version 不變。
+        source = try container.decodeIfPresent(SessionSource.self, forKey: .source) ?? .recorded
+        categoryID = try container.decodeIfPresent(String.self, forKey: .categoryID)
     }
 
     /// 產生 `YYYY-MM-DD_HHmm_xxxx` 格式的 session id。
@@ -82,6 +111,8 @@ public struct Session: Codable, Equatable, Sendable, Identifiable {
         case recovered
         case notes
         case appVersion = "app_version"
+        case source
+        case categoryID = "category_id"
     }
 
     // optional 欄位輸出明確 null（規格書第八節範例格式），故不用合成的 encodeIfPresent。
@@ -101,7 +132,15 @@ public struct Session: Codable, Equatable, Sendable, Identifiable {
         try container.encode(recovered, forKey: .recovered)
         try container.encode(notes, forKey: .notes)
         try container.encode(appVersion, forKey: .appVersion)
+        try container.encode(source, forKey: .source)
+        try container.encode(categoryID, forKey: .categoryID)
     }
+}
+
+/// session 來源。
+public enum SessionSource: String, Codable, Equatable, Sendable {
+    case recorded
+    case imported
 }
 
 /// 隱私模式。v0.1 只有 local_only；其餘兩種在 v0.3 提供 UI，資料模型自始預留。
