@@ -3,7 +3,7 @@ import SSAudio
 import SSCore
 import SwiftUI
 
-/// App 主視窗的三欄殼層：sidebar（搜尋、分類、session 列表、多選與批次列）、
+/// App 主視窗的三欄殼層：sidebar（搜尋、排序、分類、session 列表、多選與批次列）、
 /// main（即時逐字稿或錄音檢視頁）、inspector（可收合，標記與後續擴充）。
 public struct RootView: View {
     @Bindable private var model: RecordingViewModel
@@ -16,10 +16,20 @@ public struct RootView: View {
     @State private var showCategoryManager = false
     @State private var confirmBatchDelete = false
     @State private var infoSession: Session?
+    /// 長按列觸發的多選模式（仿 iOS）：列前顯示勾選圈，底部浮出刪除列。
+    @State private var selectionMode = false
+    /// 已折疊的側欄區段 id（未分類用固定鍵）。
+    @State private var collapsedSections: Set<String> = []
+    /// 側欄點選中列標題觸發的改名狀態。
+    @State private var renamingSessionID: String?
+    @State private var renameDraft = ""
+    @FocusState private var renameFieldFocused: Bool
     @FocusState private var transcriptFocused: Bool
     @Environment(\.openWindow) private var openWindow
     @AppStorage(DisplaySettings.appearanceKey)
     private var appearance = "system"
+
+    private static let uncategorizedSectionID = "uncategorized"
 
     public init(model: RecordingViewModel) {
         self.model = model
@@ -32,14 +42,32 @@ public struct RootView: View {
             detailArea
         }
         .toolbar { toolbarContent }
+        .toolbar(removing: .title)
         .navigationTitle("SessionScribe")
         .task { await model.onLaunch() }
         .preferredColorScheme(DisplaySettings.colorScheme(for: appearance))
+        .onChange(of: model.state) { _, newState in
+            // 停止錄音後直接選取該則，detailArea 切到含播放器的檢視頁。
+            if newState == .stopped, let id = model.activeSession?.sessionID {
+                sidebarSelection = [id]
+            }
+        }
+        .onChange(of: searchText) { _, newValue in
+            // 搜尋欄清空即移除逐字稿的跳轉高亮。
+            if newValue.trimmingCharacters(in: .whitespaces).isEmpty {
+                searchHighlight = nil
+            }
+        }
         .sheet(isPresented: $showCategoryManager) {
             CategoryManagerView(model: model)
         }
         .sheet(item: $infoSession) { session in
             SessionInfoView(session: session)
+        }
+        .sheet(item: $model.exportRequest) { session in
+            ExportOptionsView(session: session) { formats in
+                model.performExport(session: session, formats: formats)
+            }
         }
         .alert("需要麥克風權限", isPresented: $model.micPermissionDenied) {
             Button("開啟系統設定") {
@@ -87,6 +115,7 @@ public struct RootView: View {
             Button("刪除（移至垃圾桶）", role: .destructive) {
                 model.deleteSessions(sidebarSelection)
                 sidebarSelection = []
+                selectionMode = false
             }
             Button("取消", role: .cancel) {}
         } message: {
@@ -118,25 +147,62 @@ public struct RootView: View {
     // MARK: - Sidebar
 
     private var sidebar: some View {
-        List(selection: $sidebarSelection) {
+        List(selection: selectionMode ? .constant(Set<String>()) : $sidebarSelection) {
             if !searchText.trimmingCharacters(in: .whitespaces).isEmpty {
                 searchResultsSection
             } else {
                 sessionSections
             }
         }
+        .listStyle(.sidebar)
         .searchable(text: $searchText, placement: .sidebar, prompt: "搜尋逐字稿與標記")
         .searchSuggestions { searchSuggestionRows }
         .onSubmit(of: .search) { recordSearch() }
         .contextMenu(forSelectionType: String.self) { ids in
             sessionContextMenu(for: ids)
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            sidebarControlBar
+        }
         .safeAreaInset(edge: .bottom) {
-            if sidebarSelection.count > 1 {
+            if selectionMode {
+                selectionModeBar
+            } else if sidebarSelection.count > 1 {
                 batchActionBar
             }
         }
         .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 340)
+    }
+
+    /// 搜尋框下方的工具列：排序方式與分類管理入口（規格 1.1 第 7 項可發現性）。
+    private var sidebarControlBar: some View {
+        HStack(spacing: 8) {
+            Menu {
+                Picker("排序", selection: $model.sortOrder) {
+                    ForEach(RecordingViewModel.SessionSortOrder.allCases) { order in
+                        Text(order.displayName).tag(order)
+                    }
+                }
+                .pickerStyle(.inline)
+            } label: {
+                Label(model.sortOrder.displayName, systemImage: "arrow.up.arrow.down")
+                    .font(.callout)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("列表排序方式")
+            Spacer()
+            Button {
+                showCategoryManager = true
+            } label: {
+                Label("分類", systemImage: "folder.badge.gearshape")
+                    .font(.callout)
+            }
+            .buttonStyle(.borderless)
+            .help("管理分類（新增、改名、隱藏、刪除）")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
     }
 
     /// 搜尋紀錄建議（規格 1.1 第 9 項擴充：紀錄與清除）。
@@ -163,7 +229,39 @@ public struct RootView: View {
         searchHistory = SearchHistory.load()
     }
 
-    /// 多選時浮出的批次操作列：明顯的批量移動與刪除入口。
+    /// 長按觸發的多選模式底欄：置中的刪除按鈕（仿 iOS），附移動分類與取消。
+    private var selectionModeBar: some View {
+        HStack {
+            Button("取消") { exitSelectionMode() }
+                .buttonStyle(.borderless)
+            Spacer()
+            Button(role: .destructive) {
+                confirmBatchDelete = true
+            } label: {
+                Label(
+                    sidebarSelection.isEmpty ? "刪除" : "刪除（\(sidebarSelection.count)）",
+                    systemImage: "trash")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.red)
+            .disabled(sidebarSelection.isEmpty)
+            Spacer()
+            Menu {
+                categoryAssignButtons(for: sidebarSelection)
+            } label: {
+                Image(systemName: "folder")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .disabled(sidebarSelection.isEmpty)
+            .help("移至分類")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    /// Cmd 多選時浮出的批次操作列：明顯的批量移動與刪除入口。
     private var batchActionBar: some View {
         HStack(spacing: 8) {
             Text("已選 \(sidebarSelection.count) 個")
@@ -171,14 +269,7 @@ public struct RootView: View {
                 .foregroundStyle(.secondary)
             Spacer()
             Menu {
-                Button("未分類") {
-                    model.assignCategory(nil, to: sidebarSelection)
-                }
-                ForEach(model.libraryConfig.categories) { category in
-                    Button(category.name) {
-                        model.assignCategory(category.id, to: sidebarSelection)
-                    }
-                }
+                categoryAssignButtons(for: sidebarSelection)
             } label: {
                 Label("移至分類", systemImage: "folder")
             }
@@ -194,6 +285,18 @@ public struct RootView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(.bar)
+    }
+
+    @ViewBuilder
+    private func categoryAssignButtons(for ids: Set<String>) -> some View {
+        Button("未分類") {
+            model.assignCategory(nil, to: ids)
+        }
+        ForEach(model.libraryConfig.categories) { category in
+            Button(category.name) {
+                model.assignCategory(category.id, to: ids)
+            }
+        }
     }
 
     private var searchResultsSection: some View {
@@ -237,7 +340,7 @@ public struct RootView: View {
 
     @ViewBuilder
     private var sessionSections: some View {
-        Section("未分類") {
+        Section(isExpanded: expandedBinding(Self.uncategorizedSectionID)) {
             if model.uncategorizedSessions.isEmpty {
                 Text("尚無 session")
                     .foregroundStyle(.secondary)
@@ -247,22 +350,68 @@ public struct RootView: View {
                         .tag(session.sessionID)
                 }
             }
+        } header: {
+            sectionHeader("未分類", dropCategoryID: nil)
         }
         ForEach(model.visibleCategories) { category in
-            Section(category.name) {
+            Section(isExpanded: expandedBinding(category.id)) {
                 ForEach(model.sessions(in: category.id)) { session in
                     sessionRow(session)
                         .tag(session.sessionID)
                 }
+            } header: {
+                sectionHeader(category.name, dropCategoryID: category.id)
             }
         }
     }
 
+    /// 區段標頭：加重字級與顏色（修正過淡過細），並作為拖放目標收 session。
+    private func sectionHeader(_ title: String, dropCategoryID: String?) -> some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.primary)
+            .dropDestination(for: String.self) { ids, _ in
+                model.assignCategory(dropCategoryID, to: Set(ids))
+                return true
+            }
+    }
+
+    private func expandedBinding(_ id: String) -> Binding<Bool> {
+        Binding(
+            get: { !collapsedSections.contains(id) },
+            set: { expanded in
+                if expanded {
+                    collapsedSections.remove(id)
+                } else {
+                    collapsedSections.insert(id)
+                }
+            })
+    }
+
     /// 列表只顯示標題與必要徽章；id 與時間等細節收進「詳細資訊」第二層。
+    /// 點選中列的標題改名；長按進入多選模式；可拖到區段標頭換分類。
     private func sessionRow(_ session: Session) -> some View {
         HStack(spacing: 6) {
-            Text(session.title)
-                .lineLimit(1)
+            if selectionMode {
+                Image(
+                    systemName: sidebarSelection.contains(session.sessionID)
+                        ? "checkmark.circle.fill" : "circle"
+                )
+                .foregroundStyle(
+                    sidebarSelection.contains(session.sessionID)
+                        ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
+            }
+            if renamingSessionID == session.sessionID {
+                TextField("名稱", text: $renameDraft)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($renameFieldFocused)
+                    .onSubmit { commitSidebarRename(session) }
+                    .onExitCommand { renamingSessionID = nil }
+            } else {
+                Text(session.title)
+                    .lineLimit(1)
+                    .onTapGesture { handleTitleTap(session) }
+            }
             if session.sessionID == model.activeSession?.sessionID,
                 model.state == .recording || model.state == .paused
             {
@@ -278,6 +427,54 @@ public struct RootView: View {
                 badge("已恢復")
             }
         }
+        .contentShape(Rectangle())
+        .draggable(session.sessionID)
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                if selectionMode {
+                    toggleSelection(session.sessionID)
+                }
+            })
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.45).onEnded { _ in
+                enterSelectionMode(with: session.sessionID)
+            })
+    }
+
+    /// 點標題文字：未選中先選中，已是唯一選中則進入改名（仿 iOS 兩段式）。
+    private func handleTitleTap(_ session: Session) {
+        guard !selectionMode else { return }
+        if sidebarSelection == [session.sessionID] {
+            renameDraft = session.title
+            renamingSessionID = session.sessionID
+            renameFieldFocused = true
+        } else {
+            sidebarSelection = [session.sessionID]
+        }
+    }
+
+    private func commitSidebarRename(_ session: Session) {
+        model.renameSession(session.sessionID, to: renameDraft)
+        renamingSessionID = nil
+    }
+
+    private func toggleSelection(_ id: String) {
+        if sidebarSelection.contains(id) {
+            sidebarSelection.remove(id)
+        } else {
+            sidebarSelection.insert(id)
+        }
+    }
+
+    private func enterSelectionMode(with id: String) {
+        guard !selectionMode else { return }
+        selectionMode = true
+        sidebarSelection = [id]
+    }
+
+    private func exitSelectionMode() {
+        selectionMode = false
+        sidebarSelection = []
     }
 
     private func badge(_ text: String) -> some View {
@@ -293,6 +490,12 @@ public struct RootView: View {
         if ids.count == 1, let id = ids.first,
             let session = model.sessions.first(where: { $0.sessionID == id })
         {
+            Button("重新命名") {
+                sidebarSelection = [id]
+                renameDraft = session.title
+                renamingSessionID = id
+                renameFieldFocused = true
+            }
             Button("詳細資訊…") {
                 infoSession = session
             }
@@ -306,14 +509,7 @@ public struct RootView: View {
         }
         if !ids.isEmpty {
             Menu("移至分類") {
-                Button("未分類") {
-                    model.assignCategory(nil, to: ids)
-                }
-                ForEach(model.libraryConfig.categories) { category in
-                    Button(category.name) {
-                        model.assignCategory(category.id, to: ids)
-                    }
-                }
+                categoryAssignButtons(for: ids)
             }
             Button("刪除\(ids.count > 1 ? "選取的 \(ids.count) 個" : "")…", role: .destructive) {
                 sidebarSelection = ids
@@ -328,17 +524,21 @@ public struct RootView: View {
 
     // MARK: - Detail
 
+    /// 只有錄音中／暫停中的 activeSession 才走即時逐字稿頁；
+    /// 已停止的場次一律進檢視頁（含播放器），修正剛停止的錄音看不到內容的問題。
     @ViewBuilder
     private var detailArea: some View {
         if sidebarSelection.count == 1, let id = sidebarSelection.first,
-            id != model.activeSession?.sessionID,
-            let session = model.sessions.first(where: { $0.sessionID == id })
+            let session = model.sessions.first(where: { $0.sessionID == id }),
+            !(id == model.activeSession?.sessionID
+                && (model.state == .recording || model.state == .paused))
         {
             SessionDetailView(
                 directory: model.directory(for: session),
                 highlightSegmentID: searchHighlight?.sessionID == id
                     ? searchHighlight?.segmentID : nil,
-                showInspector: $showInspector
+                showInspector: $showInspector,
+                onRename: { model.refreshSessions() }
             )
             .id(id)
         } else {
@@ -467,19 +667,22 @@ public struct RootView: View {
             }
             .disabled(model.state == .recording || model.state == .paused)
             .help("匯入音訊檔作為新 session，可選擇是否轉寫")
-
-            inputDevicePicker
+        }
+        ToolbarItem(placement: .principal) {
+            Text("SessionScribe")
+                .font(.headline)
         }
         ToolbarItemGroup {
-            modePicker
+            recordingOptionsMenu
             recordButton
-            Button {
-                Task { await model.stop() }
-            } label: {
-                Label("停止", systemImage: "stop.circle")
+            if model.state == .recording || model.state == .paused {
+                Button {
+                    Task { await model.stop() }
+                } label: {
+                    Label("停止", systemImage: "stop.circle")
+                }
+                .help("停止並保存")
             }
-            .disabled(model.state != .recording && model.state != .paused)
-            .help("停止並保存")
 
             Button {
                 model.exportActiveSession()
@@ -487,7 +690,7 @@ public struct RootView: View {
                 Label("匯出", systemImage: "square.and.arrow.up")
             }
             .disabled(model.activeSession == nil)
-            .help("匯出目前 session（Markdown、CSV、JSON）")
+            .help("匯出目前 session（先選擇要匯出的內容）")
 
             Button {
                 openWindow(id: "floating-transcript")
@@ -497,7 +700,6 @@ public struct RootView: View {
             .help("開啟置頂的即時逐字稿視窗")
         }
         ToolbarItemGroup {
-            statusArea
             Button {
                 showInspector.toggle()
             } label: {
@@ -527,6 +729,8 @@ public struct RootView: View {
             .help("繼續錄音")
         case .idle, .stopped:
             Button {
+                // 清掉側欄選取，主欄回到即時逐字稿頁顯示新場次。
+                sidebarSelection = []
                 Task { await model.startRecording() }
             } label: {
                 Label("錄音", systemImage: "record.circle")
@@ -535,57 +739,25 @@ public struct RootView: View {
         }
     }
 
-    /// 本場模式：邊錄音邊轉寫或純錄音。錄音中不可切換。
-    private var modePicker: some View {
-        Picker("模式", selection: $model.transcribeEnabled) {
-            Label("錄音＋轉寫", systemImage: "waveform.badge.mic").tag(true)
-            Label("純錄音", systemImage: "mic").tag(false)
-        }
-        .pickerStyle(.menu)
-        .disabled(model.state == .recording || model.state == .paused)
-        .help("本次錄音是否同時轉寫（下一場生效）")
-    }
-
-    /// 狀態區：統一以徽章呈現，保持一致性。
-    @ViewBuilder
-    private var statusArea: some View {
-        StatusBadge(text: "本機模式", systemImage: "lock.shield")
-        StatusBadge(
-            text: model.stateDescription.text,
-            systemImage: model.stateDescription.systemImage)
-        if let transcription = model.transcriptionDescription {
-            StatusBadge(text: transcription.text, systemImage: transcription.systemImage)
-        }
-        if model.state == .recording || model.state == .paused {
-            StatusBadge(text: model.formattedDuration, systemImage: "timer")
-            LevelMeterView(level: model.level)
-        }
-    }
-
-    private var inputDevicePicker: some View {
-        Picker("輸入裝置", selection: $model.selectedDeviceUID) {
-            Text("系統預設輸入").tag(String?.none)
-            ForEach(model.inputDevices) { device in
-                Text(device.name).tag(String?.some(device.id))
+    /// 錄音選項整合選單：轉寫模式與輸入裝置同一入口，減少工具列雜訊。
+    private var recordingOptionsMenu: some View {
+        Menu {
+            Picker("錄音模式", selection: $model.transcribeEnabled) {
+                Label("錄音＋轉寫", systemImage: "waveform.badge.mic").tag(true)
+                Label("純錄音", systemImage: "mic").tag(false)
             }
+            .pickerStyle(.inline)
+            Picker("輸入裝置", selection: $model.selectedDeviceUID) {
+                Text("系統預設輸入").tag(String?.none)
+                ForEach(model.inputDevices) { device in
+                    Text(device.name).tag(String?.some(device.id))
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Label("錄音選項", systemImage: "slider.horizontal.3")
         }
-        .pickerStyle(.menu)
         .disabled(model.state == .recording || model.state == .paused)
-        .help("選擇音訊輸入裝置（下一場生效）")
-    }
-}
-
-/// 狀態徽章：文字加圖示，不單靠顏色傳達狀態。
-struct StatusBadge: View {
-    let text: String
-    let systemImage: String
-
-    var body: some View {
-        Label(text, systemImage: systemImage)
-            .font(.callout)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(.quaternary, in: Capsule())
-            .accessibilityLabel(text)
+        .help("錄音模式與輸入裝置（下一場生效）")
     }
 }

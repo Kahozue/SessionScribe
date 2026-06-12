@@ -5,7 +5,8 @@ import SSTranscription
 import SwiftUI
 
 /// 錄音檢視頁的 view model：載入 metadata、segments、markers，
-/// 持有播放器並推導歌詞式定位的當前 segment。
+/// 透過 SessionPlayerCache 共用播放器（切換 session 進度不歸零），
+/// 並推導歌詞式定位的當前 segment。
 @MainActor
 @Observable
 final class SessionDetailViewModel {
@@ -30,10 +31,25 @@ final class SessionDetailViewModel {
             session = try await store.loadMetadata()
             segments = try await store.loadSegments()
             markers = try await store.loadMarkers()
-            player = try? SessionPlayer(
-                audioDirectory: directory.appending(path: SessionFiles.audioDirectory))
+            player = try? SessionPlayerCache.shared.player(
+                for: directory.appending(path: SessionFiles.audioDirectory))
         } catch {
             errorMessage = "載入 session 失敗：\(error.localizedDescription)"
+        }
+    }
+
+    /// 點標題改名：metadata 即時落盤。
+    func rename(to title: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespaces)
+        guard var updated = session, !trimmed.isEmpty, trimmed != updated.title else { return }
+        updated.title = trimmed
+        session = updated
+        Task {
+            do {
+                try await store.saveMetadata(updated)
+            } catch {
+                errorMessage = "重新命名失敗：\(error.localizedDescription)"
+            }
         }
     }
 
@@ -74,22 +90,36 @@ final class SessionDetailViewModel {
 }
 
 /// 錄音檢視頁（規格 1.1 第 5、10 項）：metadata、chunk 串接播放、
-/// 進度條、歌詞式逐字稿（點擊跳轉播放）。
+/// 進度條、倍速、歌詞模式與列表模式雙顯示。
 public struct SessionDetailView: View {
     @State private var model: SessionDetailViewModel
     /// 搜尋跳轉時要定位的 segment。
     let highlightSegmentID: String?
     /// 右欄（事件標記與後續擴充）收合狀態，與主視窗工具列的切換鈕共用。
     @Binding var showInspector: Bool
+    /// 改名後通知外層（側欄列表同步）。
+    let onRename: (() -> Void)?
+
+    /// 搜尋跳轉的高亮：定位後短暫顯示再淡出（規格 1.1 第 9 項回饋修正）。
+    @State private var activeHighlightID: String?
+    @State private var editingTitle = false
+    @State private var titleDraft = ""
+    @FocusState private var titleFieldFocused: Bool
+    @AppStorage(DisplaySettings.transcriptModeKey)
+    private var transcriptMode = DisplaySettings.lyricsMode
+
+    private static let playbackRates: [Float] = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
 
     public init(
         directory: URL,
         highlightSegmentID: String? = nil,
-        showInspector: Binding<Bool> = .constant(true)
+        showInspector: Binding<Bool> = .constant(true),
+        onRename: (() -> Void)? = nil
     ) {
         _model = State(initialValue: SessionDetailViewModel(directory: directory))
         self.highlightSegmentID = highlightSegmentID
         self._showInspector = showInspector
+        self.onRename = onRename
     }
 
     public var body: some View {
@@ -108,11 +138,19 @@ public struct SessionDetailView: View {
                 Divider()
                 if model.segments.isEmpty {
                     emptyTranscriptArea
+                } else if transcriptMode == DisplaySettings.listMode {
+                    PlainTranscriptView(
+                        segments: model.segments,
+                        currentSegmentID: model.currentSegmentID,
+                        highlightSegmentID: activeHighlightID
+                    ) { segment in
+                        model.player?.seek(to: segment.startSeconds)
+                    }
                 } else {
                     LyricsTranscriptView(
                         segments: model.segments,
                         currentSegmentID: model.currentSegmentID,
-                        highlightSegmentID: highlightSegmentID
+                        highlightSegmentID: activeHighlightID
                     ) { segment in
                         model.player?.seek(to: segment.startSeconds)
                     }
@@ -123,6 +161,14 @@ public struct SessionDetailView: View {
             }
         }
         .task(id: model.directory) { await model.load() }
+        .task(id: highlightSegmentID) {
+            activeHighlightID = highlightSegmentID
+            guard highlightSegmentID != nil else { return }
+            try? await Task.sleep(for: .seconds(4))
+            withAnimation(.easeOut(duration: 0.5)) {
+                activeHighlightID = nil
+            }
+        }
         .alert(
             "發生錯誤",
             isPresented: Binding(
@@ -177,11 +223,28 @@ public struct SessionDetailView: View {
         .inspectorColumnWidth(min: 240, ideal: 300, max: 380)
     }
 
+    /// 標題列：點標題文字改名（仿 iOS）；資訊列只留語言、分段數、標記數。
     private func header(_ session: Session) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
-                Text(session.title)
-                    .font(.title2.bold())
+                if editingTitle {
+                    TextField("名稱", text: $titleDraft)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.title2.bold())
+                        .focused($titleFieldFocused)
+                        .frame(maxWidth: 360)
+                        .onSubmit { commitRename() }
+                        .onExitCommand { editingTitle = false }
+                } else {
+                    Text(session.title)
+                        .font(.title2.bold())
+                        .onTapGesture {
+                            titleDraft = session.title
+                            editingTitle = true
+                            titleFieldFocused = true
+                        }
+                        .help("點擊重新命名")
+                }
                 if session.source == .imported {
                     Text("匯入")
                         .font(.caption)
@@ -197,17 +260,37 @@ public struct SessionDetailView: View {
                         .background(.quaternary, in: Capsule())
                 }
                 Spacer()
+                displayModeToggle
             }
-            Text(
-                "\(session.sessionID)　\(session.locale)"
-                    + (session.asrEngine.isEmpty ? "" : "　引擎：\(session.asrEngine)")
-                    + "　segments：\(model.segments.count)　markers：\(model.markers.count)"
-            )
-            .font(.callout)
-            .foregroundStyle(.secondary)
+            Text("\(session.locale)　分段：\(model.segments.count)　標記：\(model.markers.count)")
+                .font(.callout)
+                .foregroundStyle(.secondary)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func commitRename() {
+        model.rename(to: titleDraft)
+        editingTitle = false
+        onRename?()
+    }
+
+    /// 顯示模式切換：點擊在歌詞模式與列表模式間循環，與倍速同樣的輕量互動。
+    private var displayModeToggle: some View {
+        Button {
+            transcriptMode =
+                transcriptMode == DisplaySettings.lyricsMode
+                ? DisplaySettings.listMode : DisplaySettings.lyricsMode
+        } label: {
+            Label(
+                transcriptMode == DisplaySettings.lyricsMode ? "歌詞模式" : "列表模式",
+                systemImage: transcriptMode == DisplaySettings.lyricsMode
+                    ? "music.note.list" : "list.bullet")
+            .font(.callout)
+        }
+        .buttonStyle(.borderless)
+        .help("切換逐字稿顯示方式（歌詞模式與列表模式循環）")
     }
 
     @ViewBuilder
@@ -215,6 +298,9 @@ public struct SessionDetailView: View {
         if let player = model.player {
             HStack(spacing: 10) {
                 Button {
+                    if !player.isPlaying {
+                        SessionPlayerCache.shared.pauseAll(except: player)
+                    }
                     player.togglePlay()
                 } label: {
                     Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
@@ -222,6 +308,18 @@ public struct SessionDetailView: View {
                 }
                 .buttonStyle(.borderless)
                 .help(player.isPlaying ? "暫停" : "播放")
+                Button {
+                    let index =
+                        Self.playbackRates.firstIndex(of: player.playbackRate) ?? 3
+                    player.playbackRate =
+                        Self.playbackRates[(index + 1) % Self.playbackRates.count]
+                } label: {
+                    Text(String(format: "%g×", player.playbackRate))
+                        .font(.callout.monospacedDigit())
+                        .frame(minWidth: 40)
+                }
+                .buttonStyle(.borderless)
+                .help("播放倍速（點擊循環切換）")
                 Text(TimeFormatting.hms(player.currentSeconds))
                     .font(.caption.monospacedDigit())
                 Slider(
@@ -264,9 +362,9 @@ public struct SessionDetailView: View {
     }
 }
 
-/// Apple Music 歌詞風格的逐字稿（規格 1.1 第 10 項）：
-/// 當前 segment 放大、全不透明、加粗，其餘縮小降不透明度，
-/// spring 動畫切換並自動置中，點擊任一段跳轉播放位置。
+/// 歌詞模式（規格 1.1 第 10 項）：當前 segment 放大、全不透明、加粗，
+/// 其餘縮小降不透明度，spring 動畫切換並自動置中。
+/// 內文可選取複製；點時間戳跳轉播放位置。
 struct LyricsTranscriptView: View {
     let segments: [TranscriptSegment]
     let currentSegmentID: String?
@@ -308,6 +406,11 @@ struct LyricsTranscriptView: View {
             Text(TimeFormatting.hms(segment.startSeconds))
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.tertiary)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    onSelect(segment)
+                }
+                .help("點擊時間跳到 \(TimeFormatting.hms(segment.startSeconds))")
             Text(segment.text)
                 .font(.system(
                     size: isCurrent ? fontSize * 1.3 : fontSize,
@@ -315,6 +418,7 @@ struct LyricsTranscriptView: View {
                 .lineSpacing(fontSize * 0.3)
                 .foregroundStyle(isCurrent ? .primary : .secondary)
                 .opacity(isCurrent ? 1.0 : 0.5)
+                .textSelection(.enabled)
         }
         .scaleEffect(isCurrent ? 1.0 : 0.97, anchor: .leading)
         .padding(.vertical, 2)
@@ -323,10 +427,67 @@ struct LyricsTranscriptView: View {
             isHighlighted ? Color.accentColor.opacity(0.12) : Color.clear,
             in: RoundedRectangle(cornerRadius: 8))
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: currentSegmentID)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            onSelect(segment)
+    }
+}
+
+/// 列表模式：時間徽章加內文的一般排版，適合閱讀與大段選取複製；
+/// 點時間徽章跳轉播放位置，不自動捲動。
+struct PlainTranscriptView: View {
+    let segments: [TranscriptSegment]
+    let currentSegmentID: String?
+    let highlightSegmentID: String?
+    let onSelect: (TranscriptSegment) -> Void
+    @AppStorage(DisplaySettings.fontSizeKey)
+    private var fontSize = DisplaySettings.defaultFontSize
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    ForEach(segments) { segment in
+                        plainRow(segment)
+                            .id(segment.segmentID)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 16)
+            }
+            .onAppear {
+                if let highlightSegmentID {
+                    proxy.scrollTo(highlightSegmentID, anchor: .center)
+                }
+            }
         }
-        .help("點擊跳到 \(TimeFormatting.hms(segment.startSeconds))")
+    }
+
+    private func plainRow(_ segment: TranscriptSegment) -> some View {
+        let isCurrent = segment.segmentID == currentSegmentID
+        let isHighlighted = segment.segmentID == highlightSegmentID
+        return VStack(alignment: .leading, spacing: 4) {
+            Button {
+                onSelect(segment)
+            } label: {
+                Text(
+                    "\(TimeFormatting.hms(segment.startSeconds)) - "
+                        + TimeFormatting.hms(segment.endSeconds)
+                )
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1)
+                .background(.quaternary, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .help("點擊跳到 \(TimeFormatting.hms(segment.startSeconds))")
+            Text(segment.text)
+                .font(.system(size: fontSize, weight: isCurrent ? .semibold : .regular))
+                .lineSpacing(fontSize * 0.35)
+                .textSelection(.enabled)
+        }
+        .padding(.vertical, 2)
+        .padding(.horizontal, 8)
+        .background(
+            isHighlighted ? Color.accentColor.opacity(0.12) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 8))
     }
 }

@@ -26,6 +26,8 @@ public final class RecordingViewModel {
     public var micPermissionDenied = false
     /// 剛匯入、等使用者決定是否立即轉寫的 session。
     public var pendingTranscription: Session?
+    /// 等待選擇匯出格式的 session；非 nil 時 UI 顯示匯出選項視窗。
+    public var exportRequest: Session?
 
     public private(set) var inputDevices: [AudioInputDevice] = []
     public var selectedDeviceUID: String?
@@ -37,6 +39,30 @@ public final class RecordingViewModel {
         }
     }
     private static let transcribeEnabledKey = "transcribeEnabled"
+
+    /// 側欄列表排序方式（跨啟動記憶）。
+    public enum SessionSortOrder: String, CaseIterable, Identifiable, Sendable {
+        case newestFirst
+        case oldestFirst
+        case titleAscending
+
+        public var id: String { rawValue }
+
+        public var displayName: String {
+            switch self {
+            case .newestFirst: "由新到舊"
+            case .oldestFirst: "由舊到新"
+            case .titleAscending: "依名稱"
+            }
+        }
+    }
+
+    public var sortOrder: SessionSortOrder {
+        didSet {
+            UserDefaults.standard.set(sortOrder.rawValue, forKey: Self.sortOrderKey)
+        }
+    }
+    private static let sortOrderKey = "sessionSortOrder"
 
     public private(set) var transcript: [TranscriptSegment] = []
     public private(set) var volatileText: String?
@@ -72,6 +98,10 @@ public final class RecordingViewModel {
         library = SessionLibrary(rootDirectory: root)
         transcribeEnabled =
             UserDefaults.standard.object(forKey: Self.transcribeEnabledKey) as? Bool ?? true
+        sortOrder =
+            SessionSortOrder(
+                rawValue: UserDefaults.standard.string(forKey: Self.sortOrderKey) ?? ""
+            ) ?? .newestFirst
     }
 
     /// app container 內的 Application Support/SessionScribe/Sessions。
@@ -110,15 +140,47 @@ public final class RecordingViewModel {
     }
 
     public func sessions(in categoryID: String?) -> [Session] {
-        sessions.filter { $0.categoryID == categoryID }
+        applySort(sessions.filter { $0.categoryID == categoryID })
     }
 
     /// 未分類的 session；分類定義已不存在者也算未分類，不讓 session 憑空消失。
     public var uncategorizedSessions: [Session] {
-        sessions.filter { session in
-            guard let categoryID = session.categoryID else { return true }
-            return !libraryConfig.categories.contains { $0.id == categoryID }
+        applySort(
+            sessions.filter { session in
+                guard let categoryID = session.categoryID else { return true }
+                return !libraryConfig.categories.contains { $0.id == categoryID }
+            })
+    }
+
+    private func applySort(_ list: [Session]) -> [Session] {
+        switch sortOrder {
+        case .newestFirst:
+            list.sorted { $0.createdAt > $1.createdAt }
+        case .oldestFirst:
+            list.sorted { $0.createdAt < $1.createdAt }
+        case .titleAscending:
+            list.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
         }
+    }
+
+    /// 重新命名（側欄或檢視頁點標題觸發），metadata 即時落盤。
+    public func renameSession(_ sessionID: String, to title: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        do {
+            try library.rename(sessionID: sessionID, to: trimmed)
+            sessions = try library.sessions()
+            if activeSession?.sessionID == sessionID {
+                activeSession?.title = trimmed
+            }
+        } catch {
+            errorMessage = "重新命名失敗：\(error.localizedDescription)"
+        }
+    }
+
+    /// 從磁碟重讀列表（檢視頁改名等外部變更後同步側欄）。
+    public func refreshSessions() {
+        sessions = (try? library.sessions()) ?? sessions
     }
 
     public func addCategory(name: String) {
@@ -168,6 +230,11 @@ public final class RecordingViewModel {
     }
 
     public func deleteSessions(_ sessionIDs: Set<String>) {
+        for sessionID in sessionIDs {
+            SessionPlayerCache.shared.remove(
+                audioDirectory: library.directory(for: sessionID)
+                    .appending(path: SessionFiles.audioDirectory))
+        }
         do {
             try library.delete(sessionIDs: sessionIDs)
             sessions = try library.sessions()
@@ -352,8 +419,19 @@ public final class RecordingViewModel {
 
     // MARK: - 匯出
 
-    /// 整場匯出：使用者選資料夾，寫出 transcript.md、markers.csv、session.json 與 jsonl 副本。
+    /// 整場匯出入口：先跳匯出選項視窗選格式，確認後才選目的資料夾。
     public func export(session: Session) {
+        exportRequest = session
+    }
+
+    public func exportActiveSession() {
+        guard let activeSession else { return }
+        export(session: activeSession)
+    }
+
+    /// 匯出選項確認後執行：使用者選資料夾，依勾選格式寫出。
+    public func performExport(session: Session, formats: Set<ExportFormat>) {
+        guard !formats.isEmpty else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -366,17 +444,13 @@ public final class RecordingViewModel {
             do {
                 try await ExportService.export(
                     store: store, session: session,
-                    to: destination.appending(path: "\(session.sessionID)_export"))
+                    to: destination.appending(path: "\(session.sessionID)_export"),
+                    formats: formats)
                 infoMessage = "匯出完成：\(session.sessionID)_export"
             } catch {
                 errorMessage = "匯出失敗：\(error.localizedDescription)"
             }
         }
-    }
-
-    public func exportActiveSession() {
-        guard let activeSession else { return }
-        export(session: activeSession)
     }
 
     /// 選取匯出：把選取的 segments 與時間範圍內的 markers 匯出為單一 Markdown。
