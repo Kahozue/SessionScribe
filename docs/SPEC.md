@@ -1,6 +1,6 @@
 # SessionScribe 規格書
 
-版本：1.0（2026-06-12 敲定）
+版本：1.1（2026-06-12；1.0 同日敲定，1.1 增補第十五節使用者新增功能）
 來源：`aim.md` 原始需求，加上敲定階段的修訂決議。本文件是開發依據，與 aim.md 衝突時以本文件為準。
 
 ## 一、產品定位
@@ -343,3 +343,18 @@ v0.2 增加：模板化 `structured_notes.md`（論文口試格式照 aim.md 十
 16. 不得假設 SpeechAnalyzer 支援所有 locale。
 17. 不得硬綁單一 ASR 引擎。
 18. 不得犧牲錄音穩定性換取功能。
+
+## 十五、規格 1.1 新增功能（2026-06-12 使用者提出）
+
+以下八項已確認納入，版本歸屬與設計決議如下：
+
+1. **浮動即時逐字稿視窗**（M4）：獨立的 always-on-top 視窗顯示即時逐字稿，可自由調整大小，字級與主畫面共用設定，顯示完整捲動歷史而非只有最新一句。實作以 SwiftUI 第二個 Window scene 加 `.windowLevel(.floating)`；macOS 26 的 Liquid Glass 半透明特化列入待驗證清單，不阻塞功能。
+2. **字體大小與外觀模式調整**（M4）：逐字稿字級可調（預設 14pt，範圍 11 至 28），外觀模式三選（跟隨系統、淺色、深色），設定持久化（AppStorage），主畫面與浮動視窗共用。
+3. **逐字稿格式化顯示與時間軸跳轉**（M4 顯示、M6 播放跳轉）：segment 以卡片式排版呈現（時間戳徽章、內文、時間窗內 marker 內嵌徽章），可讀性優先於純文字流。格式化只在顯示層與匯出層進行，原始 transcript 文字不改（核心可靠性原則 4）。點擊 segment 依時間軸跳轉：即時畫面為捲動定位，錄音檢視頁為播放跳轉。
+4. **選取匯出**（M3 匯出層、M4 介面）：逐字稿列表支援多選，將選取範圍匯出為排版良好的 Markdown；匯出器一律接受 segment 子集，全量匯出是子集的特例。
+5. **錄音檢視頁面**（M6）：sidebar 點選 session 進入檢視頁，顯示 metadata、音訊播放控制（依 manifest 串接 chunk 播放、進度條）、逐字稿全文與 marker 列表，點 segment 跳轉播放位置。
+6. **匯入音檔**（M6）：可開啟音訊檔（caf、wav、m4a、mp3、aiff）建立 `source: "imported"` 的 session，音檔複製進 `audio/` 並重建 manifest；匯入時可選擇是否立即離線轉寫（走同一套 TranscriptionEngine，自檔案讀 buffer 餵入）。匯入歷史即 session 列表，imported session 有標示。metadata 新增 `source` 欄位（`recorded` 或 `imported`），舊檔缺欄位視為 `recorded`，schema_version 不變。
+7. **分類與批次管理**（M7）：session 列表支援多選、批次刪除（需確認）、批次移動分類。分類可自訂名稱、可隱藏、可排序，定義存於 sessions 根目錄的 `library.json`；metadata 新增可空欄位 `category_id`，舊檔缺欄位視為未分類。
+8. **App icon**（M8，最後執行）：以 SVG 繪製後轉出 icns。
+9. **跨逐字稿搜尋**（M7）：搜尋列輸入文字，跨所有 session 的 segments 與 marker note 搜尋（不分大小寫），結果依 session 分組、顯示時間戳與命中片段，點擊跳轉到該 session 檢視頁並定位該 segment。實作為 SSCore 的 TranscriptSearchService，檔案式線性掃描（session 數量級在百以內無需索引，之後需要再加 SQLite FTS）。
+10. **歌詞式定位效果**（M6 檢視頁）：播放與定位採 Apple Music 歌詞風格：當前 segment 放大、全不透明、加粗，其餘 segment 縮小且降不透明度，切換帶 spring 動畫並自動置中；點擊任一 segment 跳轉播放位置。即時轉寫畫面的 volatile 尾段沿用同一視覺語言（淡色、就地替換）。

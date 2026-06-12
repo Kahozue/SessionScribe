@@ -13,6 +13,7 @@ public actor LiveRecordingPipeline: RecordingPipeline {
 
     private var clock: MediaClock?
     private var writer: ChunkedAudioWriter?
+    private var transcription: TranscriptionCoordinator?
     private var consumerTask: Task<Void, Never>?
     private var levelContinuation: AsyncStream<AudioLevel>.Continuation?
     private var writeError: (any Error)?
@@ -25,6 +26,12 @@ public actor LiveRecordingPipeline: RecordingPipeline {
         self.audioDirectory = audioDirectory
         self.deviceUID = deviceUID
         self.chunkDuration = chunkDuration
+    }
+
+    /// 掛上轉寫協調者（在 start 前）。引擎錯誤由 coordinator 吸收，
+    /// 錄音寫入分支完全不受影響（規格書第六節第 8 條）。
+    public func attachTranscription(_ coordinator: TranscriptionCoordinator?) {
+        transcription = coordinator
     }
 
     /// 音量更新流，供 level meter UI 訂閱（在 start 前訂閱）。
@@ -69,7 +76,9 @@ public actor LiveRecordingPipeline: RecordingPipeline {
         await consumerTask?.value
         consumerTask = nil
         levelContinuation?.finish()
+        // 錄音優先：先收尾 chunk 與索引，再收尾轉寫。
         _ = try await writer?.finish()
+        await transcription?.finish()
         if let writeError {
             throw writeError
         }
@@ -80,16 +89,23 @@ public actor LiveRecordingPipeline: RecordingPipeline {
     }
 
     private func process(_ captured: CapturedBuffer) async {
+        let startSeconds = clock?.currentSeconds ?? 0
         clock?.advance(frames: captured.frames)
         levelContinuation?.yield(AudioLevelMeter.level(of: captured.buffer))
-        guard let writer else { return }
-        do {
-            try await writer.write(captured)
-        } catch {
-            // 記錄首個寫入錯誤；錄音流程繼續，stop 時回報。
-            if writeError == nil {
-                writeError = error
+        if let writer {
+            do {
+                try await writer.write(captured)
+            } catch {
+                // 記錄首個寫入錯誤；錄音流程繼續，stop 時回報。
+                if writeError == nil {
+                    writeError = error
+                }
             }
+        }
+        // 轉寫餵入在寫檔之後；feed 內部吸收引擎錯誤，不影響錄音。
+        if let transcription {
+            await transcription.feed(
+                AudioSlice(buffer: captured.buffer, startSeconds: startSeconds))
         }
     }
 }

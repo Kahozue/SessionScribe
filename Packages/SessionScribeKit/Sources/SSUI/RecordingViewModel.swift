@@ -1,10 +1,13 @@
+import AppKit
 import Foundation
 import Observation
 import SSAudio
 import SSCore
+import SSTranscription
 
-/// 錄音流程的 view model：持有 SessionController 與 LiveRecordingPipeline，
-/// 將狀態、媒體時間與音量發佈給 UI。所有錯誤以文字呈現，不讓 UI 崩潰。
+/// 錄音與轉寫流程的 view model：持有 SessionController、LiveRecordingPipeline、
+/// TranscriptionCoordinator 與 MarkerService，把狀態、逐字稿、標記、音量
+/// 發佈給 UI。所有錯誤以文字呈現，不讓 UI 崩潰。
 @MainActor
 @Observable
 public final class RecordingViewModel {
@@ -18,17 +21,36 @@ public final class RecordingViewModel {
     public private(set) var level: AudioLevel = .silent
     public var errorMessage: String?
     public var diskSpaceWarning: String?
+    public var exportMessage: String?
     public var micPermissionDenied = false
 
     public private(set) var inputDevices: [AudioInputDevice] = []
     public var selectedDeviceUID: String?
 
+    public private(set) var transcript: [TranscriptSegment] = []
+    public private(set) var volatileText: String?
+    public private(set) var markers: [Marker] = []
+
+    public enum TranscriptionState: Equatable {
+        case none
+        case preparing
+        case ready(String)
+        case active(String)
+        case recordingOnly
+        case failed
+    }
+    public private(set) var transcriptionState: TranscriptionState = .none
+
     // MARK: - 內部
 
     private var controller: SessionController?
     private var pipeline: LiveRecordingPipeline?
+    private var coordinator: TranscriptionCoordinator?
+    private var markerService: MarkerService?
+    private var store: SessionStore?
     private var levelTask: Task<Void, Never>?
     private var clockTask: Task<Void, Never>?
+    private var transcriptTasks: [Task<Void, Never>] = []
     private let library: SessionLibrary
     public let sessionsRoot: URL
 
@@ -67,14 +89,14 @@ public final class RecordingViewModel {
 
     // MARK: - Session 控制
 
-    /// 建立新 session 並備妥錄音管線。錄音中不可建立。
+    /// 建立新 session、備妥錄音管線並依降級鏈選擇轉寫引擎。
     public func newSession() async {
         guard state != .recording && state != .paused else { return }
         await tearDownActiveSession()
         do {
             try checkDiskSpace()
             let deviceName = inputDevices.first { $0.id == selectedDeviceUID }?.name
-            let session = Session(
+            var session = Session(
                 sessionID: Session.makeID(),
                 title: "新場次 \(Self.titleDateFormatter.string(from: Date()))",
                 templateID: "thesis_defense",
@@ -83,16 +105,40 @@ public final class RecordingViewModel {
                 appVersion: Self.appVersion
             )
             let store = try await SessionStore.create(session, in: sessionsRoot)
+            self.store = store
             let pipeline = LiveRecordingPipeline(
                 audioDirectory: store.directory.appending(path: SessionFiles.audioDirectory),
                 deviceUID: selectedDeviceUID)
             self.pipeline = pipeline
+            markerService = MarkerService(store: store, sessionID: session.sessionID)
+            transcript = []
+            markers = []
+            volatileText = nil
+            mediaSeconds = 0
+            state = .idle
+
+            // 引擎降級鏈：SpeechAnalyzer、SFSpeechRecognizer、純錄音。
+            transcriptionState = .preparing
+            let useMock = UserDefaults.standard.bool(forKey: DisplaySettings.useMockEngineKey)
+            if let engine = await EngineSelector.selectAndPrepare(
+                from: EngineSelector.defaultChain(useMock: useMock),
+                locale: Locale(identifier: session.locale))
+            {
+                let coordinator = TranscriptionCoordinator(engine: engine, store: store)
+                self.coordinator = coordinator
+                await pipeline.attachTranscription(coordinator)
+                session.asrEngine = engine.info.name
+                try await store.saveMetadata(session)
+                transcriptionState = .ready(engine.info.name)
+            } else {
+                coordinator = nil
+                transcriptionState = .recordingOnly
+            }
+
             controller = SessionController(
                 session: session, store: store, pipeline: pipeline,
                 sleepInhibitor: SleepInhibitor())
             activeSession = session
-            state = .idle
-            mediaSeconds = 0
             subscribeLevels(of: pipeline)
             sessions = try library.sessions()
         } catch {
@@ -102,6 +148,20 @@ public final class RecordingViewModel {
 
     public func start() async {
         guard let controller else { return }
+        // 先啟動轉寫；失敗即轉純錄音，不阻擋錄音（核心原則 2）。
+        if let coordinator, let session = activeSession {
+            await subscribeTranscription(coordinator)
+            do {
+                try await coordinator.start(
+                    sessionID: session.sessionID,
+                    locale: Locale(identifier: session.locale))
+                transcriptionState = .active(coordinator.engineInfo.name)
+            } catch {
+                self.coordinator = nil
+                await pipeline?.attachTranscription(nil)
+                transcriptionState = .failed
+            }
+        }
         do {
             try await controller.start()
             state = await controller.state
@@ -143,7 +203,91 @@ public final class RecordingViewModel {
         state = await controller.state
         stopClockPolling()
         level = .silent
+        volatileText = nil
+        if case .active = transcriptionState {
+            transcriptionState = .none
+        }
         sessions = (try? library.sessions()) ?? sessions
+    }
+
+    // MARK: - 標記
+
+    /// 按鍵或按鈕觸發：對齊當前媒體時間，立即落盤，零確認步驟。
+    public func addMarker(_ type: MarkerType) {
+        guard state == .recording || state == .paused,
+            let markerService, let controller
+        else { return }
+        Task {
+            do {
+                let seconds = await controller.mediaSeconds
+                let marker = try await markerService.addMarker(
+                    type: type, mediaSeconds: seconds, segments: transcript)
+                markers.append(marker)
+            } catch {
+                errorMessage = "標記寫入失敗：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// segment 時間範圍內的 markers，逐字稿列表內嵌顯示用。
+    public func inlineMarkers(for segment: TranscriptSegment) -> [Marker] {
+        markers.filter {
+            $0.mediaSeconds >= segment.startSeconds && $0.mediaSeconds < segment.endSeconds
+        }
+    }
+
+    // MARK: - 匯出
+
+    /// 整場匯出：使用者選資料夾，寫出 transcript.md、markers.csv、session.json 與 jsonl 副本。
+    public func export(session: Session) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "匯出到此資料夾"
+        panel.message = "選擇 \(session.title) 的匯出目的地"
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+        let store = SessionStore(directory: library.directory(for: session.sessionID))
+        Task {
+            do {
+                try await ExportService.export(
+                    store: store, session: session,
+                    to: destination.appending(path: "\(session.sessionID)_export"))
+                exportMessage = "匯出完成：\(session.sessionID)_export"
+            } catch {
+                errorMessage = "匯出失敗：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    public func exportActiveSession() {
+        guard let activeSession else { return }
+        export(session: activeSession)
+    }
+
+    /// 選取匯出：把選取的 segments 與時間範圍內的 markers 匯出為單一 Markdown。
+    public func exportSelection(_ segmentIDs: Set<String>) {
+        guard let session = activeSession, !segmentIDs.isEmpty else { return }
+        let chosen = transcript
+            .filter { segmentIDs.contains($0.segmentID) }
+            .sorted { $0.startSeconds < $1.startSeconds }
+        guard let first = chosen.first, let last = chosen.last else { return }
+        let related = markers.filter {
+            $0.mediaSeconds >= first.startSeconds && $0.mediaSeconds <= last.endSeconds
+        }
+        let markdown = MarkdownExporter.transcript(
+            session: session, segments: chosen, markers: related)
+
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "\(session.sessionID)_選取段落.md"
+        panel.prompt = "匯出"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try Data(markdown.utf8).write(to: url, options: .atomic)
+            exportMessage = "已匯出 \(chosen.count) 個選取段落"
+        } catch {
+            errorMessage = "匯出失敗：\(error.localizedDescription)"
+        }
     }
 
     /// 在 Finder 顯示 session 資料夾（規格書決議 8 的可發現性要求）。
@@ -160,8 +304,38 @@ public final class RecordingViewModel {
         stopClockPolling()
         levelTask?.cancel()
         levelTask = nil
+        for task in transcriptTasks {
+            task.cancel()
+        }
+        transcriptTasks = []
         controller = nil
         pipeline = nil
+        coordinator = nil
+        markerService = nil
+        store = nil
+        transcriptionState = .none
+    }
+
+    private func subscribeTranscription(_ coordinator: TranscriptionCoordinator) async {
+        let finalized = await coordinator.finalizedUpdates()
+        let volatiles = await coordinator.volatileUpdates()
+        transcriptTasks.append(
+            Task {
+                for await segment in finalized {
+                    self.transcript.append(segment)
+                }
+                // 流在仍錄音時終止代表引擎中途死亡；錄音不受影響。
+                if self.state == .recording || self.state == .paused {
+                    self.transcriptionState = .failed
+                }
+            })
+        transcriptTasks.append(
+            Task {
+                for await update in volatiles {
+                    self.volatileText = update.text
+                }
+                self.volatileText = nil
+            })
     }
 
     private func checkDiskSpace() throws {
@@ -205,8 +379,7 @@ public final class RecordingViewModel {
     // MARK: - 顯示輔助
 
     public var formattedDuration: String {
-        let total = Int(mediaSeconds)
-        return String(format: "%02d:%02d:%02d", total / 3600, (total % 3600) / 60, total % 60)
+        TimeFormatting.hms(mediaSeconds)
     }
 
     public var stateDescription: (text: String, systemImage: String) {
@@ -215,6 +388,17 @@ public final class RecordingViewModel {
         case .recording: ("錄音中", "record.circle.fill")
         case .paused: ("已暫停", "pause.circle.fill")
         case .stopped: ("已停止", "stop.circle.fill")
+        }
+    }
+
+    public var transcriptionDescription: (text: String, systemImage: String)? {
+        switch transcriptionState {
+        case .none: nil
+        case .preparing: ("準備引擎中", "hourglass")
+        case .ready(let name): ("引擎：\(name)", "waveform.badge.mic")
+        case .active(let name): ("轉寫中：\(name)", "waveform.badge.mic")
+        case .recordingOnly: ("純錄音模式", "mic")
+        case .failed: ("轉寫錯誤，錄音持續", "exclamationmark.triangle")
         }
     }
 
