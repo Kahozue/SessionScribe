@@ -75,7 +75,11 @@ final class SessionDetailViewModel {
             errorMessage = "沒有可用的轉寫引擎。"
             return
         }
-        let coordinator = TranscriptionCoordinator(engine: engine, store: store)
+        // 名詞表存於 sessions 根目錄（本 session 目錄的上層）的 library.json。
+        let config = (try? LibraryConfigFile.read(from: directory.deletingLastPathComponent()))
+            ?? LibraryConfig()
+        let coordinator = TranscriptionCoordinator(
+            engine: engine, store: store, lexicon: config.lexicon)
         do {
             try await OfflineTranscriber.transcribe(
                 sessionDirectory: directory, session: session, coordinator: coordinator

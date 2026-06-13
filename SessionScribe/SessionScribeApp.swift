@@ -19,9 +19,9 @@ struct SessionScribeApp: App {
         .defaultSize(width: 460, height: 320)
         .windowResizability(.contentMinSize)
 
-        // 設定視窗（Cmd+,）：字級、外觀、引擎與 v0.2 起的設定。
+        // 設定視窗（Cmd+,）：字級、外觀、引擎與 v0.2 起的設定，與主視窗共用 model。
         Settings {
-            SettingsView()
+            SettingsView(model: model)
         }
     }
 }
