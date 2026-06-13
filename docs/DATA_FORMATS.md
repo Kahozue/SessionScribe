@@ -50,7 +50,7 @@
 | `ended_at` | ISO-8601 或 null | 正常停止時刻；null 即崩潰殘留候選 |
 | `locale` | String | 如 `zh-TW` |
 | `asr_engine` | String | 本場實際使用的引擎名稱 |
-| `privacy_mode` | String | `local_only`、`text_cloud_assist`、`audio_cloud_asr`；目前仍僅寫入 `local_only`，雲端模式保留給 v0.3 |
+| `privacy_mode` | String | `local_only`、`text_cloud_assist`、`audio_cloud_asr`；預設 `local_only`。當該 session 跑過雲端整理或雲端摘要（v0.3 Text Cloud Assist）後，如實更新為 `text_cloud_assist`。`audio_cloud_asr` 保留給後續版本 |
 | `audio_input` | String | 輸入裝置名稱 |
 | `recovered` | Bool | 曾經崩潰恢復 |
 | `notes` | String | 使用者備註 |
@@ -214,3 +214,12 @@ v0.2 有三種產生與更新路徑：
 - `events.json`：結構化事件原檔。匯出時有既有 events.json 則直接輸出，否則由 markers 即時生成草稿。
 - `events.csv`：事件的完整欄位，陣列欄位以分號串接，RFC 4180 跳脫。
 - `<session_id>.m4a`：依 manifest 順序串接 CAF chunks 轉成單一 AAC 檔（`AudioExporter`，AVMutableComposition＋AppleM4A preset），與原始 CAF 匯出並存不取代。
+
+## 十三、雲端整理設定（v0.3 Text Cloud Assist）
+
+雲端整理的設定本體與 API key 分開存放：
+
+- **設定本體**：`CloudLLMSettings` 以 JSON 編碼存 `UserDefaults`，鍵為 `cloudLLMSettings`。欄位：`enabled`（總開關，預設 false）、`engine`（`local`／`cloud`，預設 `local`）、`providers`（供應商設定清單）、`activeProviderID`（目前選用的供應商 id）。每筆供應商設定含 `id`、`format`（`openai_compatible`／`anthropic`／`gemini`）、`displayName`、`baseURL`、`model`。**不含 API key。**
+- **API key**：存系統 Keychain（`kSecClassGenericPassword`），service 為 `com.sessionscribe.cloud-llm`，account 為供應商設定的 `id`。不寫入 UserDefaults、不寫入任何檔案、不支援環境變數讀取。
+- **雲端產物**：雲端整理產生的 events 與摘要沿用既有 `events.json`／`transcript_summary.json` 結構與落盤路徑，與本機產物同結構、同 `needs_review` 規則（事件 `needs_review: true`）。
+- **隱私旗標鏡像**：`DisplaySettings.cloudAssistEnabledKey`（`cloudAssistEnabledMirror`）僅供 UI 觀察用，實際讀寫一律走 `CloudLLMSettings.load()`／`save()`。
