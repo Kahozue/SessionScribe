@@ -31,6 +31,23 @@ final class SessionDetailViewModel {
         self.store = SessionStore(directory: directory)
     }
 
+    // MARK: 整理/摘要引擎路由（本機 vs 雲端，v0.3 Text Cloud Assist）
+
+    private var cloudSettings: CloudLLMSettings { CloudLLMSettings.load() }
+    private let keychain: KeychainStore = SystemKeychainStore()
+
+    private var resolvedOrganizer: EventOrganizing {
+        AssistResolver.eventOrganizer(settings: cloudSettings, keychain: keychain)
+    }
+    private var resolvedSummarizer: TranscriptSummarizing {
+        AssistResolver.summarizer(settings: cloudSettings, keychain: keychain)
+    }
+
+    /// 目前生效的引擎是否為雲端（需總開關開、引擎=雲端、供應商與 key 齊備）。
+    var usingCloudAssist: Bool {
+        AssistResolver.client(settings: cloudSettings, keychain: keychain) != nil
+    }
+
     func load() async {
         do {
             session = try await store.loadMetadata()
@@ -131,9 +148,10 @@ final class SessionDetailViewModel {
         Task {
             defer { summarizing = false }
             do {
-                summary = try await TranscriptSummarizer.generateSummary(
+                summary = try await resolvedSummarizer.summarize(
                     from: segs, sessionID: sessionID, locale: locale)
                 persistSummary()
+                await markTextCloudAssistIfNeeded()
             } catch {
                 errorMessage = "AI 產生摘要失敗：\(error.localizedDescription)"
             }
@@ -160,12 +178,13 @@ final class SessionDetailViewModel {
         Task {
             defer { organizing = false }
             do {
-                let organized = try await EventOrganizer.organize(current, locale: locale) {
-                    progress in
+                let organizer = resolvedOrganizer
+                let organized = try await organizer.organize(current, locale: locale) { progress in
                     Task { @MainActor in self.organizeProgress = progress }
                 }
                 events = organized
                 persistEvents()
+                await markTextCloudAssistIfNeeded()
             } catch {
                 errorMessage = "AI 整理失敗：\(error.localizedDescription)"
             }
@@ -183,22 +202,37 @@ final class SessionDetailViewModel {
         Task {
             defer { organizing = false }
             do {
-                events = try await EventOrganizer.generateEvents(
+                events = try await resolvedOrganizer.generateEvents(
                     from: segs, sessionID: sessionID, locale: locale)
                 persistEvents()
+                await markTextCloudAssistIfNeeded()
             } catch {
                 errorMessage = "AI 產生草稿失敗：\(error.localizedDescription)"
             }
         }
     }
 
-    /// 魔杖可按的條件：模型可用，且有逐字稿可生成或已有草稿可整理。
+    /// 魔杖可按的條件：引擎可用（雲端生效或本機模型可用），且有逐字稿可生成或已有草稿可整理。
     var canRunAI: Bool {
-        organizeAvailabilityMessage == nil && (!segments.isEmpty || !events.isEmpty)
+        (usingCloudAssist || organizeAvailabilityMessage == nil)
+            && (!segments.isEmpty || !events.isEmpty)
     }
 
     var canGenerateSummary: Bool {
-        summaryAvailabilityMessage == nil && !segments.isEmpty
+        (usingCloudAssist || summaryAvailabilityMessage == nil) && !segments.isEmpty
+    }
+
+    /// 跑雲端整理/摘要成功後，如實把該 session 的 privacyMode 記為 textCloudAssist。
+    private func markTextCloudAssistIfNeeded() async {
+        guard usingCloudAssist, var current = session,
+              current.privacyMode != .textCloudAssist else { return }
+        current.privacyMode = .textCloudAssist
+        do {
+            try await store.saveMetadata(current)
+            session = current
+        } catch {
+            errorMessage = "更新隱私模式失敗：\(error.localizedDescription)"
+        }
     }
 
     /// 點標題改名：metadata 即時落盤。

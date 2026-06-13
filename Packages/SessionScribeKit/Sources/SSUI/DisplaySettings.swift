@@ -70,6 +70,10 @@ public enum DisplaySettings {
     public static let translationEnabledKey = "translationEnabled"
     public static let translationTargetKey = "translationTarget"
 
+    /// 雲端整理（v0.3 Text Cloud Assist）。設定本體存 CloudLLMSettings.defaultsKey，
+    /// 這裡只放 UI 觀察用的旗標鍵，實際讀寫走 CloudLLMSettings.load/save。
+    public static let cloudAssistEnabledKey = "cloudAssistEnabledMirror"
+
     static func clampedCaptionFontSize(_ raw: Double) -> Double {
         min(max(raw, captionFontSizeRange.lowerBound), captionFontSizeRange.upperBound)
     }
