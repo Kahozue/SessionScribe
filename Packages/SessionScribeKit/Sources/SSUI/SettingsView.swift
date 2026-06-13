@@ -24,6 +24,10 @@ public struct SettingsView: View {
                 .tabItem {
                     Label("轉寫", systemImage: "waveform.badge.mic")
                 }
+            CloudSettingsTab()
+                .tabItem {
+                    Label("雲端", systemImage: "cloud")
+                }
         }
         .frame(width: 460)
         .padding(.bottom, 8)
@@ -229,5 +233,129 @@ private struct TranscriptionSettingsTab: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+private struct CloudSettingsTab: View {
+    @State private var settings = CloudLLMSettings.load()
+    @State private var apiKey = ""
+    @State private var showEnableWarning = false
+    @State private var testResult: String?
+    private let keychain: KeychainStore = SystemKeychainStore()
+
+    private var active: CloudProviderConfig? { settings.activeProvider }
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("啟用雲端整理", isOn: Binding(
+                    get: { settings.enabled },
+                    set: { newValue in
+                        if newValue { showEnableWarning = true }
+                        else { settings.enabled = false; persist() }
+                    }))
+                Picker("整理引擎", selection: Binding(
+                    get: { settings.engine }, set: { settings.engine = $0; persist() })) {
+                    Text("本機").tag(AssistEngineKind.local)
+                    Text("雲端").tag(AssistEngineKind.cloud)
+                }
+                .disabled(!settings.enabled)
+            }
+
+            Section("供應商") {
+                Picker("使用", selection: Binding(
+                    get: { settings.activeProviderID ?? "" },
+                    set: { settings.activeProviderID = $0; loadKey(); persist() })) {
+                    Text("未選擇").tag("")
+                    ForEach(settings.providers) { p in Text(p.displayName).tag(p.id) }
+                }
+                Menu("新增供應商") {
+                    ForEach(CloudProviderConfig.builtInTemplates) { tpl in
+                        Button(tpl.displayName) { addTemplate(tpl) }
+                    }
+                }
+            }
+
+            if let provider = active,
+               let index = settings.providers.firstIndex(where: { $0.id == provider.id }) {
+                Section(provider.displayName) {
+                    Picker("格式", selection: $settings.providers[index].format) {
+                        ForEach(CloudProviderFormat.allCases, id: \.self) {
+                            Text($0.displayName).tag($0)
+                        }
+                    }
+                    TextField("Base URL", text: $settings.providers[index].baseURL)
+                    TextField("Model", text: $settings.providers[index].model)
+                    SecureField("API key", text: $apiKey)
+                    HStack {
+                        Button("儲存金鑰") { saveKey(account: provider.id) }
+                        Button("測試連線") { testConnection() }
+                        if let testResult {
+                            Text(testResult).appFont(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Button("刪除此供應商", role: .destructive) { removeProvider(provider.id) }
+                }
+                .onChange(of: settings.providers) { persist() }
+            }
+        }
+        .formStyle(.grouped)
+        .alert("啟用雲端整理", isPresented: $showEnableWarning) {
+            Button("取消", role: .cancel) {}
+            Button("啟用") { settings.enabled = true; persist() }
+        } message: {
+            Text("選定的逐字稿或事件內容會送往所選供應商，音訊不會送出。AI 產物會標記需複查。")
+        }
+        .onAppear { loadKey() }
+    }
+
+    private func persist() { settings.save() }
+
+    private func addTemplate(_ tpl: CloudProviderConfig) {
+        var copy = tpl
+        copy.id = "\(tpl.id)-\(UUID().uuidString.prefix(6))"
+        settings.providers.append(copy)
+        settings.activeProviderID = copy.id
+        apiKey = ""
+        persist()
+    }
+
+    private func removeProvider(_ id: String) {
+        settings.providers.removeAll { $0.id == id }
+        if settings.activeProviderID == id {
+            settings.activeProviderID = settings.providers.first?.id
+        }
+        try? keychain.deleteSecret(account: id)
+        loadKey()
+        persist()
+    }
+
+    private func loadKey() {
+        apiKey = (try? keychain.secret(account: settings.activeProviderID ?? "")) ?? ""
+    }
+
+    private func saveKey(account: String) {
+        try? keychain.setSecret(apiKey, account: account)
+        testResult = "已儲存"
+    }
+
+    private func testConnection() {
+        guard let provider = active else { return }
+        try? keychain.setSecret(apiKey, account: provider.id)
+        var probe = settings; probe.enabled = true; probe.engine = .cloud
+        guard let client = AssistResolver.client(settings: probe, keychain: keychain) else {
+            testResult = "設定不完整"; return
+        }
+        testResult = "測試中…"
+        Task {
+            do {
+                _ = try await client.complete(system: "回覆 JSON {\"ok\":true}", user: "ping")
+                await MainActor.run { testResult = "連線成功" }
+            } catch let error as CloudLLMError {
+                await MainActor.run { testResult = error.userMessage }
+            } catch {
+                await MainActor.run { testResult = "連線失敗" }
+            }
+        }
     }
 }
