@@ -1,9 +1,9 @@
 # SessionScribe 規格書
 
-版本：1.3（2026-06-13；1.1 增補第十五節使用者新增功能，1.2 對齊 v0.2 已合併現況，1.3 增補 v0.3 摘要與驗收狀態）
+版本：1.3（2026-06-13；1.1 增補第十五節使用者新增功能，1.2 對齊 v0.2 已合併現況，1.3 增補 v0.3 摘要、雲端整理與驗收狀態）
 來源：`aim.md` 原始需求，加上敲定階段的修訂決議。本文件是開發依據，與 aim.md 衝突時以本文件為準。
 
-目前實作狀態：v0.1 的 M0 至 M8 已完成並合併到 `main`；v0.2 驗收通過。v0.3 已開始，包含整份逐字稿摘要（本機 Apple Foundation Models）、右欄摘要／結構化事件／標記排序，以及兩小時級長錄測試改列 v0.3 驗收項目。v0.3 雲端輔助與雲端 ASR 尚未開始。
+目前實作狀態：v0.1 的 M0 至 M8 已完成並合併到 `main`；v0.2 驗收通過。v0.3 已開始，包含整份逐字稿摘要（本機 Apple Foundation Models）、右欄摘要／結構化事件／標記排序，以及兩小時級長錄測試改列 v0.3 驗收項目。雲端整理（Text Cloud Assist）已實作：事件整理與整份摘要兩項操作新增 OpenAI 相容／Anthropic／Gemini 三種雲端後端，本機與雲端並存、由使用者選用，Local Only 由程式層堅守。雲端 ASR（Audio Cloud ASR）尚未開始。
 
 ## 一、產品定位
 
@@ -32,7 +32,7 @@ macOS 原生桌面應用程式，核心能力：
 5. **MVP 的 CSV 匯出對象是 markers**：`markers.csv` 包含時間、類型、備註、鄰近 segment 文字。`events.csv` 隨 structured events 移至 v0.2。
 6. **快捷鍵焦點規則**：Q/R/S/A 單鍵快捷只在逐字稿區持有焦點時生效；Cmd+1 至 Cmd+4 為全域替代；大按鈕永遠可點。任何文字輸入框聚焦時單鍵不得觸發標記。
 7. **防睡眠**：錄音期間以 `ProcessInfo.processInfo.beginActivity` 持有 assertion 阻止 idle sleep，停止錄音時釋放。
-8. **沙盒策略**：啟用 App Sandbox，entitlements 只含 `com.apple.security.app-sandbox` 與 `com.apple.security.device.audio-input`，不含任何 network entitlement。Local Only 的零網路由作業系統強制保證。Session 存放於 app container 的 Application Support，提供 Reveal in Finder 與標準匯出面板。v0.3 加入雲端功能時才加回 network client entitlement，並於 README 說明驗證方式。
+8. **沙盒策略**：啟用 App Sandbox。v0.3 雲端整理出貨後，entitlements 含 `com.apple.security.app-sandbox`、`com.apple.security.device.audio-input`、`com.apple.security.files.user-selected.read-write` 與 `com.apple.security.network.client`。單一 app 帶 network client entitlement，Local Only 的零網路保證自 OS 強制降為程式層保證：唯一的 `URLSession` 只在 `SSCore/Cloud` 層，且只在「總開關開 AND 引擎=雲端 AND 供應商與 key 齊備」時才被建構（`AssistResolver` 集中守門，並有單元測試確保 Local Only 不建構任何 client）。以 in-app guard、持續 UI 狀態標、啟用前警告、README 可驗證性說明補強。Session 存放於 app container 的 Application Support，提供 Reveal in Finder 與標準匯出面板。
 9. **文件歸宿**：aim.md 保留原樣作為原始需求書，本 SPEC.md 是正式規格。
 10. **音訊格式**：canonical 格式為 PCM CAF chunks（48kHz 單聲道 16-bit 起，依輸入裝置調整）。CAF 容器對中斷寫入容錯最佳。磁碟代價約每兩小時 700MB，錄音前檢查可用空間，匯出時可選轉 m4a。
 
@@ -104,8 +104,8 @@ macOS 原生桌面應用程式，核心能力：
 ## 七、隱私模式
 
 1. **Local Only**（預設）：音訊與逐字稿留本機，使用 Apple 本機 ASR，零網路請求（entitlements 強制）。
-2. **Text Cloud Assist**（v0.3）：音訊留本機，只把使用者選定的逐字稿或結構化請求傳給雲端 LLM，啟用前明確提醒。
-3. **Audio Cloud ASR**（v0.3）：允許音訊片段傳雲端 ASR，啟用前明確提醒，預設關閉，API key 只從本機設定或環境變數讀取，提供安全輸入介面。
+2. **Text Cloud Assist**（v0.3 已實作）：音訊永遠留本機，只把使用者選定的逐字稿或結構化請求傳給雲端 LLM；事件整理與整份摘要兩項操作可選雲端後端，支援 OpenAI 相容／Anthropic／Gemini 三種線路格式，每供應商可設 base URL／model，API key 存 Keychain（不進 UserDefaults、不寫檔）。首次開啟總開關跳警告，產物一律 `needs_review`。詳見規格 1.3。
+3. **Audio Cloud ASR**（v0.3，未實作）：允許音訊片段傳雲端 ASR，啟用前明確提醒，預設關閉，API key 只從本機設定讀取，提供安全輸入介面。
 
 UI 持續顯示目前模式；非 Local Only 時有明顯但不干擾的提示。
 
@@ -289,6 +289,8 @@ v0.2 已增加：模板化 `structured_notes.md`（論文口試格式照 aim.md 
 | 結構化事件草稿、編輯、events/structured notes 匯出 | v0.2 已實作 |
 | 本機 AI 事件生成與欄位整理 | v0.2 已實作，依 Apple Foundation Models 可用性啟用 |
 | 本機 AI 整份逐字稿摘要 | v0.3 已實作，依 Apple Foundation Models 可用性啟用 |
+| 雲端整理（Text Cloud Assist，事件整理＋整份摘要） | v0.3 已實作，OpenAI 相容／Anthropic／Gemini，使用者明確啟用 |
+| 雲端 ASR（Audio Cloud ASR） | 未實作，保留後續版本 |
 | 自定義模板、event type、topic taxonomy | 未實作，保留後續版本 |
 | 自定義匯出欄位、Markdown 輸出格式 | 未實作，保留後續版本 |
 | 自定義 speaker role presets | 未實作，保留後續版本 |
@@ -330,7 +332,7 @@ v0.2 已增加：模板化 `structured_notes.md`（論文口試格式照 aim.md 
 
 ### v0.3
 
-已開始：右欄最上方整份逐字稿摘要（本機 AI 生成，`transcript_summary.json` 原子保存，可折疊，不顯示需複查標籤）、兩小時級長錄測試。後續：雲端整理（Text Cloud Assist）、雲端 ASR（Audio Cloud ASR）、API key 安全輸入、自定義 AI prompt。雲端功能啟用時才加回 network entitlement 並於 README 說明 Local Only 的驗證方式。
+已開始：右欄最上方整份逐字稿摘要（本機 AI 生成，`transcript_summary.json` 原子保存，可折疊，不顯示需複查標籤）、兩小時級長錄測試。已實作：雲端整理（Text Cloud Assist，三格式轉接器、API key 存 Keychain、設定頁雲端分頁、非 Local Only 狀態標、network client entitlement，詳見規格 1.3）。後續：雲端 ASR（Audio Cloud ASR）、自定義 AI prompt。
 
 ## 十三、測試策略
 
@@ -392,3 +394,15 @@ v0.2 已增加：模板化 `structured_notes.md`（論文口試格式照 aim.md 
 8. **App icon**（M8，最後執行）：以 SVG 繪製後轉出 icns。
 9. **跨逐字稿搜尋**（M7）：搜尋列輸入文字，跨所有 session 的 segments 與 marker note 搜尋（不分大小寫），結果依 session 分組、顯示時間戳與命中片段，點擊跳轉到該 session 檢視頁並定位該 segment。實作為 SSCore 的 TranscriptSearchService，檔案式線性掃描（session 數量級在百以內無需索引，之後需要再加 SQLite FTS）。
 10. **歌詞式定位效果**（M6 檢視頁）：播放與定位採 Apple Music 歌詞風格：當前 segment 放大、全不透明、加粗，其餘 segment 縮小且降不透明度，切換帶 spring 動畫並自動置中；點擊任一 segment 跳轉播放位置。即時轉寫畫面的 volatile 尾段沿用同一視覺語言（淡色、就地替換）。
+
+## 十六、規格 1.3 雲端整理（Text Cloud Assist，2026-06-13）
+
+第七節隱私模式第 2 項 Text Cloud Assist 的實際功能。為既有的事件整理（`EventOrganizer`）與整份摘要（`TranscriptSummarizer`）兩項操作新增雲端 LLM 可選後端，本機與雲端並存、由使用者選用。
+
+1. **三格式轉接器**：`SSCore/Cloud/` 新增 `CloudLLMClient` 協定與三個格式轉接器——OpenAI 相容（Chat Completions，涵蓋 OpenAI、DeepSeek 及任何相容端點）、Anthropic（Messages API，`x-api-key` + `anthropic-version`）、Gemini（`generateContent`）。每供應商可設 base URL、API key、model 字串。transport 以可注入的 `HTTPTransport`（預設 `URLSession`）封裝，測試以 stub 注入不打真網路。
+2. **重用本機可靠性邏輯**：`CloudEventOrganizer` / `CloudTranscriptSummarizer` 組 prompt（重用本機 `EventOrganizer.instructions` / `generateInstructions` 與 `TranscriptSummarizer.instructions`）、要求 JSON 輸出、容錯解析（剝 ```json 圍欄、括號配對掃描取第一個 JSON 物件或陣列），再重用 `applyOrganized` / `buildEvent` / `buildSummary`，確保時間重疊回推、`source_*` 追溯、`needsReview` 強制 true 等行為與本機一致。
+3. **引擎路由與 Local Only 程式層強制**：`EventOrganizing` / `TranscriptSummarizing` 協定統一本機與雲端；`AssistResolver` 依 `CloudLLMSettings` 決定走本機或雲端，只有「總開關開 AND 引擎=雲端 AND 有 active 供應商 AND key 存在」才建構雲端 client，否則一律回本機。檢視頁三個 AI 入口（產生草稿、整理、摘要）經 `AssistResolver` 取實例。
+4. **金鑰與設定**：供應商設定（id、format、顯示名、base URL、model）、active 供應商、總開關、引擎選擇存 UserDefaults（`CloudLLMSettings`，不含 key）；API key 存 Keychain（`kSecClassGenericPassword`，service `com.sessionscribe.cloud-llm`，account 為供應商 id），不進 UserDefaults、不寫檔。`KeychainStore` 協定便於測試注入假實作。設定頁新增「雲端」分頁：選格式、填 base URL／model、`SecureField` 輸入 key、測試連線（送極短 ping）。
+5. **隱私強制與提示**：唯一的 `URLSession` 只在 `SSCore/Cloud` 層；首次開總開關跳警告（說明選定文字會送往供應商、音訊永遠不送、產物標需複查）；跑雲端操作時把該 session 的 `privacyMode` 記為 `text_cloud_assist`；非 Local Only 時主錄音畫面與檢視頁標頭顯示狀態標。只送選定文字（摘要送 finalized 逐字稿、整理送事件 content 或逐字稿片段），絕不送音訊或原始 chunk。
+6. **錯誤處理**：雲端結果一律 `needsReview: true`；網路錯誤、401、429、逾時、JSON 解析失敗轉成清楚的中文錯誤訊息走既有 `errorMessage` 路徑；雲端失敗不影響錄音與逐字稿，可重試或改用本機。
+7. **不在範圍（YAGNI）**：串流回應、自定義整理 prompt、Audio Cloud ASR、環境變數讀 key、多供應商備援、token 計費 UI、雙建構版本（Local-Only 無 entitlement 版）。

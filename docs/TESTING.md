@@ -42,6 +42,11 @@ swift test --package-path Packages/SessionScribeKit
 | EventDraftBuilder、EventOrganizer | 依 marker 生成草稿、無 marker 時 AI 從 segments 生成 events、整理後保留來源欄位並強制 needs_review |
 | TranscriptSummary、TranscriptSummarizer | transcript_summary.json、整份 finalized 逐字稿來源追溯、摘要區無需複查標籤 |
 | MarkerVisualStyle、MarkerTimeline | Cmd+1 至 4 色票、模板 slot 取色、事件整理後 inline marker 保留 |
+| JSONExtraction | 容錯抽出第一個 JSON 物件/陣列：剝 ```json 圍欄、前後雜訊、忽略字串內括號、陣列、無 JSON 拋錯 |
+| OpenAICompatibleClient、AnthropicClient、GeminiClient | request 組裝（端點、headers、body JSON 形狀）與 response 解析，以注入 transport stub 不打真網路；HTTP 錯誤狀態轉錯 |
+| CloudEventOrganizer、CloudTranscriptSummarizer | 以 MockCloudLLMClient 驗：補語意欄位不覆蓋 raw、來源保留、needs_review 強制 true、空逐字稿回空摘要 |
+| AssistResolver | 引擎路由：雲端+key 齊回雲端；總開關關／引擎本機／缺 key 一律退回本機（Local Only 程式層強制）|
+| CloudLLMSettings、KeychainStore | 設定 round-trip 與預設、供應商樣板齊四家；InMemoryKeychainStore 存取／覆寫／刪除語義 |
 
 音訊測試使用合成 buffer（固定值與正弦波），不經過麥克風；寫出的 CAF 以
 `AVAudioFile` 讀回驗證 frame 數與樣本值。
@@ -98,3 +103,14 @@ swift test --package-path Packages/SessionScribeKit
 2. **全畫面字級**：設定頁「介面字級」滑桿調整後，側欄、工具列、右欄摘要／事件／標記、設定頁、浮動視窗與逐字稿內文都同步變大或變小，不只中欄逐字稿正文。
 3. **摘要可用性**：沒有逐字稿時摘要按鈕停用；本機 Apple Intelligence 未開或模型未就緒時，按鈕停用並顯示原因。
 4. **兩小時級長錄**：磁碟用量約 350MB 一小時、記憶體無顯著成長、chunk 輪替每五分鐘一次無爆音斷點。
+
+## 六、雲端整理實機驗收清單（手動，v0.3 Text Cloud Assist）
+
+需各家有效 API key。三家分別填 key 後逐項驗：
+
+1. **三家測試連線**：設定頁「雲端」分頁，分別以 OpenAI 相容、Anthropic、Gemini 樣板新增供應商、填 key、按「測試連線」，各看到「連線成功」。錯 key 應顯示「API key 無效或未授權（401）」之類清楚訊息。
+2. **雲端事件整理與摘要**：開總開關、引擎設雲端、選定供應商。對有逐字稿的 session 在檢視頁按「AI 整理／AI 產生草稿」與「AI 產生摘要」，雲端回填語意欄位與摘要，事件標 needs_review，本機逐字稿不被覆蓋。切引擎回本機後行為回到本機 FoundationModels。
+3. **Local Only 強制（零外連）**：引擎設本機（或總開關關），以 Little Snitch／Charles 觀察，跑整理與摘要時應有零外連；切雲端後才出現對應供應商端點的連線。
+4. **金鑰持久化**：填 key、關閉 app 重開，供應商設定與選用狀態保留，key 從 Keychain 讀回（設定頁 SecureField 重新顯示已存的 key）；刪除供應商後對應 Keychain 項目一併清除。
+5. **錯誤情境本機資料不損**：故意填錯 key（401）、拔網路（連線失敗）、逾時，皆顯示清楚中文錯誤訊息，且錄音與逐字稿仍保存，可重試或改用本機。
+6. **狀態標與隱私旗標**：雲端引擎生效時主錄音畫面標頭出現「雲端整理」標；跑過雲端整理的 session 檢視頁標頭顯示同一標，且 metadata.json 的 `privacy_mode` 已記為 `text_cloud_assist`。首次開總開關跳啟用前警告。
