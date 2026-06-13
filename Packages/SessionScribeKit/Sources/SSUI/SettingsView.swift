@@ -124,6 +124,12 @@ private struct TranscriptionSettingsTab: View {
     @Bindable var model: RecordingViewModel
     @AppStorage(DisplaySettings.useMockEngineKey)
     private var useMockEngine = false
+    @AppStorage(DisplaySettings.recognitionLanguageKey)
+    private var recognitionLanguage = CaptionLanguage.zhTW.code
+    @AppStorage(DisplaySettings.translationEnabledKey)
+    private var translationEnabled = false
+    @AppStorage(DisplaySettings.translationTargetKey)
+    private var translationTarget = CaptionLanguage.zhTW.code
     @State private var newFrom = ""
     @State private var newTo = ""
 
@@ -131,8 +137,41 @@ private struct TranscriptionSettingsTab: View {
         !newFrom.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
+    private var sameLanguageWarning: Bool {
+        translationEnabled && translationTarget == recognitionLanguage
+    }
+
     var body: some View {
         Form {
+            Section("辨識語言") {
+                Picker("辨識語言", selection: $recognitionLanguage) {
+                    ForEach(CaptionLanguage.allCases) { lang in
+                        Text(lang.displayName).tag(lang.code)
+                    }
+                }
+                Text("決定逐字稿用哪種語言辨識，也是即時翻譯的來源語言。下一場錄音生效。")
+                    .appFont(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("即時翻譯") {
+                Toggle("開啟即時翻譯（下一場生效）", isOn: $translationEnabled)
+                if translationEnabled {
+                    Picker("翻譯成", selection: $translationTarget) {
+                        ForEach(CaptionLanguage.allCases) { lang in
+                            Text(lang.displayName).tag(lang.code)
+                        }
+                    }
+                    if sameLanguageWarning {
+                        Text("目標語言與辨識語言相同，不會翻譯。")
+                            .appFont(.caption)
+                            .foregroundStyle(.orange)
+                    } else {
+                        Text("譯文只在每句定稿後出現（會比原文晚一截），疊在原文下。首次使用會下載語言模型；需 macOS 26.4 以上。")
+                            .appFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
             Section("引擎") {
                 Toggle("使用 Mock 引擎（開發測試用，下一場生效）", isOn: $useMockEngine)
                 Text("正常使用時保持關閉，由降級鏈自動選擇：SpeechAnalyzer、SFSpeechRecognizer、純錄音。")
@@ -174,10 +213,6 @@ private struct TranscriptionSettingsTab: View {
                     }
                     .disabled(!canAdd)
                 }
-            }
-            // 臨時：即時翻譯 sandbox spike（Phase 3 前置 gate），驗完連同檔案刪除。
-            Section("即時翻譯 spike（臨時驗證）") {
-                TranslationSpikeView()
             }
         }
         .formStyle(.grouped)

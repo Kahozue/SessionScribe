@@ -28,6 +28,7 @@ public struct TranscriptListView: View {
                         segment: segment,
                         inlineMarkers: model.inlineMarkers(for: segment),
                         markerTemplate: model.activeTemplate,
+                        translation: model.translation(for: segment.segmentID),
                         fontSize: fontSize
                     )
                     .tag(segment.segmentID)
@@ -70,6 +71,7 @@ struct SegmentRowView: View {
     let segment: TranscriptSegment
     let inlineMarkers: [Marker]
     let markerTemplate: SessionTemplate
+    var translation: String?
     let fontSize: Double
 
     var body: some View {
@@ -94,6 +96,14 @@ struct SegmentRowView: View {
                 .font(.system(size: fontSize))
                 .lineSpacing(fontSize * 0.35)
                 .textSelection(.enabled)
+            // 譯文（規格 1.2 Phase 3）：青色調、斜體小一號，疊在原文下。
+            if let translation, !translation.isEmpty {
+                Text(translation)
+                    .font(.system(size: fontSize * 0.88))
+                    .foregroundStyle(.teal)
+                    .lineSpacing(fontSize * 0.3)
+                    .textSelection(.enabled)
+            }
         }
         .padding(.vertical, 3)
         .help(

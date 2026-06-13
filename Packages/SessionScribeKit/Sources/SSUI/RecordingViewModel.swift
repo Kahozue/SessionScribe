@@ -86,6 +86,8 @@ public final class RecordingViewModel {
 
     public private(set) var transcript: [TranscriptSegment] = []
     public private(set) var volatileText: String?
+    /// finalized 段落的譯文（規格 1.2 Phase 3），以 segmentID 對應。即時顯示不持久化。
+    public private(set) var translations: [String: String] = [:]
     public private(set) var markers: [Marker] = []
     public private(set) var libraryConfig = LibraryConfig()
 
@@ -104,6 +106,7 @@ public final class RecordingViewModel {
     private var controller: SessionController?
     private var pipeline: LiveRecordingPipeline?
     private var coordinator: TranscriptionCoordinator?
+    private var translationCoordinator: TranslationCoordinator?
     private var markerService: MarkerService?
     private var store: SessionStore?
     private var levelTask: Task<Void, Never>?
@@ -328,11 +331,15 @@ public final class RecordingViewModel {
         do {
             try checkDiskSpace()
             let deviceName = inputDevices.first { $0.id == selectedDeviceUID }?.name
+            // 辨識語言（規格 1.2 Phase 3）：決定 SpeechTranscriber locale 與翻譯來源。
+            let recognitionCode =
+                UserDefaults.standard.string(forKey: DisplaySettings.recognitionLanguageKey)
+                ?? CaptionLanguage.zhTW.code
             var session = Session(
                 sessionID: Session.makeID(),
                 title: Self.nextRecordingTitle(existing: sessions),
                 templateID: selectedTemplateID,
-                locale: "zh-TW",
+                locale: recognitionCode,
                 audioInput: deviceName ?? "系統預設輸入",
                 appVersion: Self.appVersion
             )
@@ -346,6 +353,7 @@ public final class RecordingViewModel {
             transcript = []
             markers = []
             volatileText = nil
+            translations = [:]
             mediaSeconds = 0
             state = .idle
 
@@ -365,6 +373,7 @@ public final class RecordingViewModel {
                 session.asrEngine = engine.info.name
                 try await store.saveMetadata(session)
                 transcriptionState = .ready(engine.info.name)
+                await setUpTranslation(recognitionCode: recognitionCode)
             } else {
                 coordinator = nil
                 transcriptionState = .recordingOnly
@@ -444,6 +453,7 @@ public final class RecordingViewModel {
             errorMessage = "停止時發生錯誤，錄音資料已保存，下次啟動會自動恢復索引：\(error.localizedDescription)"
         }
         state = await controller.state
+        await translationCoordinator?.finish()
         stopClockPolling()
         level = .silent
         volatileText = nil
@@ -624,6 +634,7 @@ public final class RecordingViewModel {
         controller = nil
         pipeline = nil
         coordinator = nil
+        translationCoordinator = nil
         markerService = nil
         store = nil
         transcriptionState = .none
@@ -636,6 +647,12 @@ public final class RecordingViewModel {
             Task {
                 for await segment in finalized {
                     self.transcript.append(segment)
+                    // 翻譯（規格 1.2 Phase 3）：派獨立 Task，譯文延後到達不卡逐字稿。
+                    if let translationCoordinator = self.translationCoordinator {
+                        let id = segment.segmentID
+                        let text = segment.text
+                        Task { await translationCoordinator.translate(segmentID: id, text: text) }
+                    }
                 }
                 // 流在仍錄音時終止代表引擎中途死亡；錄音不受影響。
                 if self.state == .recording || self.state == .paused {
@@ -648,6 +665,39 @@ public final class RecordingViewModel {
                     self.volatileText = update.text
                 }
                 self.volatileText = nil
+            })
+    }
+
+    /// 備妥本場即時翻譯（規格 1.2 Phase 3）：翻譯關閉、來源＝目標、或非 26.4 皆略過。
+    /// prepare（含必要時下載模型）在錄音前完成；失敗則本場僅顯示原文，不影響轉寫錄音。
+    private func setUpTranslation(recognitionCode: String) async {
+        translationCoordinator = nil
+        guard UserDefaults.standard.bool(forKey: DisplaySettings.translationEnabledKey) else {
+            return
+        }
+        let targetCode =
+            UserDefaults.standard.string(forKey: DisplaySettings.translationTargetKey)
+            ?? CaptionLanguage.zhTW.code
+        guard targetCode != recognitionCode else { return }
+        guard #available(macOS 26.4, *) else {
+            infoMessage = "即時翻譯需要 macOS 26.4 以上，本場僅顯示原文。"
+            return
+        }
+        let coordinator = TranslationCoordinator(translator: AppleTranslator())
+        await coordinator.prepare(
+            source: CaptionLanguage.from(code: recognitionCode).language,
+            target: CaptionLanguage.from(code: targetCode).language)
+        if await coordinator.preparationFailed {
+            infoMessage = "翻譯模型未就緒，本場僅顯示原文。"
+            return
+        }
+        translationCoordinator = coordinator
+        let updates = await coordinator.updates()
+        transcriptTasks.append(
+            Task {
+                for await translated in updates {
+                    self.translations[translated.segmentID] = translated.text
+                }
             })
     }
 
@@ -697,7 +747,13 @@ public final class RecordingViewModel {
 
     /// 字幕浮層的兩行滾動字幕（規格 1.2）。
     public var captionLines: CaptionLines {
-        CaptionLines.derive(transcript: transcript, volatileText: volatileText)
+        CaptionLines.derive(
+            transcript: transcript, volatileText: volatileText, translations: translations)
+    }
+
+    /// 某段 finalized 的譯文（規格 1.2 Phase 3），主視窗列表內嵌顯示用。
+    public func translation(for segmentID: String) -> String? {
+        translations[segmentID]
     }
 
     public var stateDescription: (text: String, systemImage: String) {
