@@ -48,11 +48,36 @@ public actor AppleSpeechEngine: TranscriptionEngine {
 
     /// 模型未安裝時觸發 AssetInventory 下載。
     public func prepare(locale: Locale) async throws {
+        try await prepare(locale: locale, progress: { _ in })
+    }
+
+    /// 同上但回報下載進度。AssetInstallationRequest 符合 NSProgressReporting，
+    /// 以其 progress.fractionCompleted 輪詢回報；已安裝時直接回報完成。
+    public func prepare(
+        locale: Locale, progress: @escaping @Sendable (Double) -> Void
+    ) async throws {
         let transcriber = makeTranscriber(locale: locale)
-        if let request = try await AssetInventory.assetInstallationRequest(
-            supporting: [transcriber])
-        {
+        guard
+            let request = try await AssetInventory.assetInstallationRequest(
+                supporting: [transcriber])
+        else {
+            progress(1)
+            return
+        }
+        let reporter = request.progress
+        let poller = Task {
+            while !Task.isCancelled {
+                progress(reporter.fractionCompleted)
+                try? await Task.sleep(for: .milliseconds(200))
+            }
+        }
+        do {
             try await request.downloadAndInstall()
+            poller.cancel()
+            progress(1)
+        } catch {
+            poller.cancel()
+            throw error
         }
     }
 
