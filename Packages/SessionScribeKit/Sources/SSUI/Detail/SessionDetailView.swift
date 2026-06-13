@@ -70,6 +70,16 @@ final class SessionDetailViewModel {
         EventOrganizer.availabilityMessage()
     }
 
+    /// 魔杖入口：已有草稿就整理（補語意欄位），沒有草稿就直接從逐字稿生成。
+    /// 與「依標記彙整」解耦：沒有標記、只有逐字稿時也能直接用。
+    func runAIOrganize() {
+        if events.isEmpty {
+            generateEventsWithAI()
+        } else {
+            organizeEvents()
+        }
+    }
+
     /// 用本機 LLM 整理現有事件草稿的語意欄位；保留來源與 needs_review。
     func organizeEvents() {
         guard let session, !events.isEmpty, !organizing else { return }
@@ -90,6 +100,31 @@ final class SessionDetailViewModel {
                 errorMessage = "AI 整理失敗：\(error.localizedDescription)"
             }
         }
+    }
+
+    /// 無標記時的 AI 路徑：直接讀逐字稿生成事件草稿並落盤。
+    func generateEventsWithAI() {
+        guard let session, !segments.isEmpty, !organizing else { return }
+        organizing = true
+        organizeProgress = 0
+        let segs = segments
+        let sessionID = session.sessionID
+        let locale = Locale(identifier: session.locale)
+        Task {
+            defer { organizing = false }
+            do {
+                events = try await EventOrganizer.generateEvents(
+                    from: segs, sessionID: sessionID, locale: locale)
+                persistEvents()
+            } catch {
+                errorMessage = "AI 產生草稿失敗：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// 魔杖可按的條件：模型可用，且有逐字稿可生成或已有草稿可整理。
+    var canRunAI: Bool {
+        organizeAvailabilityMessage == nil && (!segments.isEmpty || !events.isEmpty)
     }
 
     /// 點標題改名：metadata 即時落盤。
@@ -259,64 +294,73 @@ public struct SessionDetailView: View {
     }
 
     private var structuredEventsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) { eventsExpanded.toggle() }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: eventsExpanded ? "chevron.down" : "chevron.right")
-                            .font(.caption)
-                        Text(
-                            model.events.isEmpty
-                                ? "結構化事件" : "結構化事件（\(model.events.count)）"
-                        )
-                        .font(.headline)
-                    }
+        VStack(alignment: .leading, spacing: 10) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { eventsExpanded.toggle() }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: eventsExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption)
+                    Text(
+                        model.events.isEmpty ? "結構化事件" : "結構化事件（\(model.events.count)）"
+                    )
+                    .font(.headline)
+                    Spacer()
                 }
-                .buttonStyle(.plain)
-                .help(eventsExpanded ? "收合" : "展開")
-                Spacer()
+            }
+            .buttonStyle(.plain)
+            .help(eventsExpanded ? "收合" : "展開")
+
+            HStack(spacing: 8) {
                 // 機械草稿：依標記前後文彙整（保留原本做法）。
                 Button {
                     model.generateDrafts()
                 } label: {
-                    Image(systemName: "doc.badge.plus")
+                    Label("依標記彙整", systemImage: "doc.badge.plus")
+                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.bordered)
                 .disabled(model.markers.isEmpty || model.organizing)
-                .help(model.markers.isEmpty ? "沒有標記可生成事件" : "依標記前後文產生／重新產生草稿")
-                // 本機 LLM 整理：補齊語意欄位，產物一律 needs_review。
+                .help(model.markers.isEmpty ? "沒有標記可彙整" : "依標記前後文產生／重新產生草稿")
+                // 本機 LLM：沒草稿就從逐字稿直接生成，有草稿就補齊欄位。產物一律 needs_review。
                 Button {
-                    model.organizeEvents()
+                    model.runAIOrganize()
                 } label: {
-                    Image(systemName: "wand.and.stars")
+                    Label(
+                        model.events.isEmpty ? "AI 產生草稿" : "AI 整理",
+                        systemImage: "wand.and.stars"
+                    )
+                    .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderless)
-                .disabled(
-                    model.events.isEmpty || model.organizing
-                        || model.organizeAvailabilityMessage != nil
-                )
-                .help(model.organizeAvailabilityMessage ?? "用本機 AI 整理事件（型別、主題、摘要、待辦）")
+                .buttonStyle(.borderedProminent)
+                .disabled(model.organizing || !model.canRunAI)
+                .help(model.organizeAvailabilityMessage ?? "用本機 AI 從逐字稿整理事件（型別、主題、摘要、待辦）")
             }
+            .controlSize(.large)
 
             if model.organizing {
-                ProgressView(value: model.organizeProgress) {
-                    Text("AI 整理中 \(Int(model.organizeProgress * 100))%")
-                        .font(.caption)
+                if model.organizeProgress > 0 {
+                    ProgressView(value: model.organizeProgress) {
+                        Text("AI 整理中 \(Int(model.organizeProgress * 100))%").font(.caption)
+                    }
+                } else {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("AI 處理中…").font(.caption).foregroundStyle(.secondary)
+                    }
                 }
-            } else if let message = model.organizeAvailabilityMessage, !model.events.isEmpty {
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            } else if let message = model.organizeAvailabilityMessage,
+                !model.events.isEmpty || !model.segments.isEmpty
+            {
+                Text(message).font(.caption).foregroundStyle(.secondary)
             }
 
             if eventsExpanded {
                 if model.events.isEmpty {
                     Text(
-                        model.markers.isEmpty
-                            ? "這個 session 沒有標記，無法生成事件草稿。"
-                            : "尚未產生事件草稿。點右上的文件圖示依標記整理，再用魔杖圖示讓本機 AI 補齊欄位。"
+                        model.segments.isEmpty
+                            ? "這個 session 還沒有逐字稿。先轉錄，再用「AI 產生草稿」或標記後「依標記彙整」。"
+                            : "尚未有草稿。有標記可按「依標記彙整」，或直接按「AI 產生草稿」讓本機 AI 從逐字稿整理。"
                     )
                     .font(.callout)
                     .foregroundStyle(.secondary)

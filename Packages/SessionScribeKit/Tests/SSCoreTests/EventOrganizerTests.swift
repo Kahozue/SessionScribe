@@ -41,6 +41,40 @@ struct EventOrganizerTests {
         #expect(result.eventID == "evt_0001")
     }
 
+    @Test("從生成事件回推：content 取原始 segment 文字、source 以時間重疊、priority 校正、needs_review true")
+    func buildEventMapsSourcesByTime() {
+        let segs = [
+            TranscriptSegment(
+                segmentID: "seg_1", sessionID: "s1", startSeconds: 0, endSeconds: 5,
+                text: "第一句", isFinal: true, language: "zh-TW", engine: "e", model: "m",
+                createdAt: Date(timeIntervalSince1970: 0)),
+            TranscriptSegment(
+                segmentID: "seg_2", sessionID: "s1", startSeconds: 5, endSeconds: 10,
+                text: "第二句", isFinal: true, language: "zh-TW", engine: "e", model: "m",
+                createdAt: Date(timeIntervalSince1970: 0)),
+            TranscriptSegment(
+                segmentID: "seg_3", sessionID: "s1", startSeconds: 30, endSeconds: 35,
+                text: "無關", isFinal: true, language: "zh-TW", engine: "e", model: "m",
+                createdAt: Date(timeIntervalSince1970: 0)),
+        ]
+        let event = EventOrganizer.buildEvent(
+            index: 0, topic: "主題", type: "問題", priority: "urgent", speakerRole: "口委",
+            responseSummary: "摘要", actionItem: "待辦", tags: ["a"],
+            startSeconds: 1, endSeconds: 9, segments: segs, sessionID: "s1",
+            createdAt: Date(timeIntervalSince1970: 100))
+
+        #expect(event.eventID == "evt_0001")
+        #expect(event.sourceSegmentIDs == ["seg_1", "seg_2"])  // seg_3 在時間範圍外
+        #expect(event.content == "第一句\n第二句")  // 取原始逐字稿、不杜撰
+        #expect(event.startSeconds == 0)  // 對齊實際 segment 邊界
+        #expect(event.endSeconds == 10)
+        #expect(event.priority == "medium")  // urgent 不合法 → medium
+        #expect(event.type == "問題")
+        #expect(event.needsReview)
+        #expect(event.sourceMarkerIDs.isEmpty)
+        #expect(event.confidence == "low")
+    }
+
     @Test("空欄位與不合法 priority 不覆蓋原值")
     func keepsOriginalOnEmptyOrInvalid() {
         let event = StructuredEvent(
