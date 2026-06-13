@@ -11,9 +11,9 @@ struct ExportOptionsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("匯出「\(session.title)」")
-                .font(.headline)
+                .appFont(.headline)
             Text("選擇要匯出的內容：")
-                .font(.callout)
+                .appFont(.callout)
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(ExportFormat.allCases) { format in
@@ -34,6 +34,7 @@ struct ExportOptionsView: View {
         }
         .padding(16)
         .frame(width: 340)
+        .appTypography()
     }
 
     private func binding(for format: ExportFormat) -> Binding<Bool> {

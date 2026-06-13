@@ -52,10 +52,10 @@ public struct MarkerButtonsView: View {
                         Image(systemName: "bookmark.fill")
                             .foregroundStyle(style.tint)
                         Text(type.label)
-                            .font(.headline)
+                            .appFont(.headline)
                     }
                     Text(hint(index))
-                        .font(.caption2)
+                        .appFont(.caption2)
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, minHeight: 44)

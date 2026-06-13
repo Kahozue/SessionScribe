@@ -22,10 +22,10 @@ public struct FloatingTranscriptView: View {
                 Label(
                     model.stateDescription.text,
                     systemImage: model.stateDescription.systemImage)
-                .font(.callout)
+                .appFont(.callout)
                 if model.state == .recording || model.state == .paused {
                     Text(model.formattedDuration)
-                        .font(.callout.monospacedDigit())
+                        .appFont(.callout, monospacedDigit: true)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -47,6 +47,7 @@ public struct FloatingTranscriptView: View {
         }
         .frame(minWidth: 320, minHeight: 200)
         .background(.thinMaterial)
+        .appTypography()
         .dynamicTypeSize(DisplaySettings.uiTypeSize)
         .preferredColorScheme(DisplaySettings.colorScheme(for: appearance))
     }

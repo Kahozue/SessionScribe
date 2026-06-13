@@ -144,7 +144,7 @@ App 啟動的崩潰恢復流程：`SessionLibrary.recoverCrashedSessions` 標記
 
 ## 十、transcript_summary.json（v0.3，整份逐字稿摘要）
 
-對應型別 `TranscriptSummary` 與文件外殼 `TranscriptSummaryDocument`，存於各 session 資料夾，原子寫入。摘要由 `TranscriptSummarizer` 以整份 finalized transcript 產生，保留所有 finalized segment ids 作來源追溯。AI 產物一律 `needs_review: true`；摘要是衍生資料，不會回寫或覆蓋 `live_segments.jsonl`。
+對應型別 `TranscriptSummary` 與文件外殼 `TranscriptSummaryDocument`，存於各 session 資料夾，原子寫入。摘要由 `TranscriptSummarizer` 以整份 finalized transcript 產生，保留所有 finalized segment ids 作來源追溯。摘要是衍生資料，不會回寫或覆蓋 `live_segments.jsonl`；右欄摘要區不顯示需複查標籤。
 
 ```json
 {
@@ -156,7 +156,7 @@ App 啟動的崩潰恢復流程：`SessionLibrary.recoverCrashedSessions` 標記
     "content": "本場主要討論研究方法、資料集限制與後續修改方向。",
     "key_points": ["資料集代表性需要補充", "研究方法需說明限制"],
     "action_items": ["補充資料集代表性段落"],
-    "needs_review": true,
+    "needs_review": false,
     "source_segment_ids": ["seg_0001", "seg_0002"],
     "created_at": "2026-06-15T02:00:00Z"
   }

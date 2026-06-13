@@ -95,7 +95,7 @@ struct MarkerInspectorRow: View {
                 onRemove()
             } label: {
                 Image(systemName: "bookmark.fill")
-                    .font(.callout)
+                    .appFont(.callout)
                     .foregroundStyle(style.tint)
                     .frame(width: 22, height: 22)
                     .contentShape(Rectangle())
@@ -126,15 +126,15 @@ struct MarkerInspectorRow: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
                 Text(marker.label)
-                    .font(.callout)
+                    .appFont(.callout)
                 Spacer()
                 Text(TimeFormatting.hms(marker.mediaSeconds))
-                    .font(.caption.monospacedDigit())
+                    .appFont(.caption, monospacedDigit: true)
                     .foregroundStyle(.secondary)
             }
             if !marker.note.isEmpty {
                 Text(marker.note)
-                    .font(.caption)
+                    .appFont(.caption)
                     .foregroundStyle(.secondary)
             }
         }

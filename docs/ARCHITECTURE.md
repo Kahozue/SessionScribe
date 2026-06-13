@@ -81,7 +81,7 @@ AI 產生摘要
     └─ TranscriptSummarizer（FoundationModels）
         ├─ finalized segments 全量輸入
         ├─ 產生 content / key_points / action_items
-        ├─ needs_review 強制 true
+        ├─ 保留來源資訊，UI 不顯示需複查標籤
         ├─ source_segment_ids 包含所有 finalized segments
         └─ transcript_summary.json 原子寫入
 ```
@@ -237,7 +237,7 @@ SVG 繪製 app icon 轉 icns、README 補齊（安裝、執行、權限、匯入
 
 ### v0.2 與 v0.3
 v0.2 已合併且驗收通過：模板系統、自定義 marker type、專有名詞表校正、EventDraftBuilder、結構化事件檢視與編輯、EventOrganizer 本機 AI 整理、設定頁、segment 播放、`structured_notes.md` / `events.json` / `events.csv` / m4a 匯出、Cmd+1 至 4 色票、右欄 marker 書籤取消。
-v0.3 已開始：TranscriptSummarizer 整份逐字稿摘要、`transcript_summary.json`、右欄摘要／結構化事件／標記排序、兩小時級長錄驗收。
+v0.3 已開始：TranscriptSummarizer 整份逐字稿摘要、`transcript_summary.json`、右欄摘要／結構化事件／標記排序、摘要不顯示需複查標籤、兩小時級長錄驗收。
 v0.3 後續：雲端整理與雲端 ASR（opt-in、加回 network entitlement）、API key 安全輸入、自訂 AI prompt。
 
 ## 八、風險清單與對策

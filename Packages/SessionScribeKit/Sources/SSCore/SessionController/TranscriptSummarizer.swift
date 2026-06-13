@@ -2,7 +2,7 @@ import Foundation
 import FoundationModels
 
 /// 本機 LLM 逐字稿摘要（v0.3）：對整份 finalized transcript 產生摘要。
-/// 摘要是衍生資料，原始逐字稿不被覆蓋；AI 產物一律 needs_review。
+/// 摘要是衍生資料，原始逐字稿不被覆蓋；摘要預設不標需複查。
 public enum TranscriptSummarizer {
 
     public enum SummaryError: Error, Sendable {
@@ -69,7 +69,7 @@ public enum TranscriptSummarizer {
     }
 
     /// 拆成純值函式以便單元測試：summary 來源涵蓋所有 finalized segments，
-    /// 空白重點／待辦會被移除，needs_review 強制 true。
+    /// 空白重點／待辦會被移除，摘要預設不標需複查。
     static func buildSummary(
         content: String,
         keyPoints: [String],
@@ -85,7 +85,7 @@ public enum TranscriptSummarizer {
             content: content.trimmingCharacters(in: .whitespacesAndNewlines),
             keyPoints: compactLines(keyPoints),
             actionItems: compactLines(actionItems),
-            needsReview: true,
+            needsReview: false,
             sourceSegmentIDs: finals.map(\.segmentID),
             createdAt: createdAt)
     }
