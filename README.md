@@ -2,15 +2,19 @@
 
 macOS 原生的錄音、即時轉寫與事件標記工具。為現場記錄場景設計（論文口試、會議、訪談、講座），核心原則是現場可靠性：原始錄音永遠是最高優先級，ASR 或任何後續處理失敗都不影響錄音與已保存的資料。
 
-目前狀態：M0 至 M8 完成（v0.1 功能齊備，待實機驗收）。
+目前狀態：v0.2 驗收通過。v0.3 已開始，包含右欄整份逐字稿摘要；兩小時級長錄測試改列 v0.3 驗收項目。
 
 ## 功能
 
 - 完整錄音：PCM CAF 分塊增量保存加 manifest 索引，崩潰最多損失當前緩衝；啟動時自動恢復崩潰殘留 session
 - 本機即時轉寫：macOS 26 SpeechAnalyzer / SpeechTranscriber 為主引擎（zh-TW 已驗證），SFSpeechRecognizer 備援，全部不可用時自動退為純錄音；Mock 引擎供無語音環境開發測試
 - volatile 與 finalized 轉寫結果在 UI 上明確區分；浮動置頂的即時逐字稿視窗
-- 單鍵事件標記：Q 問題、R 必改、S 建議、A 重要回答（Cmd+1 至 4 全域），立即落盤
-- 匯出：transcript.md、markers.csv、session.json、jsonl 原檔副本；逐字稿可多選後匯出選取段落
+- 單鍵事件標記：Q/R/S/A 與 Cmd+1 至 4，依目前模板對應四個主要標記；Cmd+1 至 4 具固定色票，右欄書籤圖示可取消既有標記
+- 內建場景模板：論文口試、會議、訪談、講座；錄音時四鍵文案與 type 依模板切換
+- 自訂標記與專有名詞表：設定頁可新增自訂 marker type，lexicon 規則會套用於後續 finalized 與 volatile 轉寫文字
+- 整份逐字稿摘要：檢視頁右欄最上方可用本機 AI 產生摘要、重點與待辦，摘要區可折疊，產物一律標為需複查
+- 結構化事件：檢視頁右欄可依標記彙整 events，也可在本機 Apple Foundation Models 可用時用 AI 從逐字稿生成草稿或補齊欄位；AI 產物一律標為需複查
+- 匯出：transcript.md、markers.csv、session.json、jsonl 原檔副本、structured_notes.md、events.json、events.csv、m4a；逐字稿可多選後匯出選取段落
 - 匯入音檔（caf、wav、m4a、mp3、aiff）轉為標準 session，可選離線轉寫
 - 錄音檢視頁：chunk 串接播放、歌詞式定位（當前段放大置中、點擊跳轉播放）
 - 跨逐字稿搜尋（segments 與標記備註），結果一鍵跳轉定位
@@ -42,11 +46,12 @@ xcodegen generate
 
 ## 基本使用
 
-1. 工具列「新增 Session」（可先選輸入裝置），按「開始」錄音。
-2. 逐字稿區聚焦時按 Q/R/S/A 建立標記，或用 Inspector 的大按鈕、Cmd+1 至 4。
-3. 「停止」保存後按「匯出」選資料夾。側欄右鍵任何 session 也可匯出或在 Finder 顯示。
-4. 「匯入音檔」可把既有錄音轉成 session，匯入後可選擇立即離線轉寫。
-5. 側欄點選舊 session 進入檢視頁播放；搜尋列可跨所有逐字稿找文字；右鍵多選可批次移分類或刪除。
+1. 工具列「新增 Session」（可先選輸入裝置與模板），按「開始」錄音。
+2. 逐字稿區聚焦時按 Q/R/S/A 建立標記，或用 Inspector 的大按鈕、Cmd+1 至 4。右欄事件列表中的書籤圖示可取消標記。
+3. 側欄點選舊 session 進入檢視頁播放；右欄由上到下是逐字稿摘要、結構化事件、事件標記，可分別折疊。摘要可按「AI 產生摘要」，事件可按「依標記彙整」或「AI 產生草稿／AI 整理」。
+4. 「停止」保存後按「匯出」選資料夾，可輸出逐字稿、標記、結構化事件與 m4a。側欄右鍵任何 session 也可匯出或在 Finder 顯示。
+5. 「匯入音檔」可把既有錄音轉成 session，匯入後可選擇立即離線轉寫。
+6. 搜尋列可跨所有逐字稿找文字；右鍵多選可批次移分類或刪除。設定頁可管理分類、自訂標記與專有名詞表。
 
 Session 資料存於 app container 內 `~/Library/Containers/io.github.kahozue.SessionScribe/Data/Library/Application Support/SessionScribe/Sessions/`，每場一個資料夾，格式見 `docs/DATA_FORMATS.md`。
 
@@ -58,8 +63,7 @@ Session 資料存於 app container 內 `~/Library/Containers/io.github.kahozue.S
 ## 測試
 
 ```bash
-cd Packages/SessionScribeKit
-swift test
+swift test --package-path Packages/SessionScribeKit
 ```
 
 單元測試不需要麥克風與語音模型。實機驗證清單見 `docs/TESTING.md`。
@@ -68,12 +72,13 @@ swift test
 
 - 預設 Local Only：音訊與逐字稿只存本機，使用 Apple 本機語音模型
 - App 的 entitlements 不含網路權限，可直接檢視 `SessionScribe/SessionScribe.entitlements` 驗證
-- 雲端輔助功能（v0.3）採 opt-in，啟用前明確提示，API key 只存本機
+- 本機 AI 摘要與整理使用 Apple Foundation Models，沒有加入網路權限
+- 雲端輔助功能（v0.3 後續，未開始）採 opt-in，啟用前明確提示，API key 只存本機
 - 專案不含 API key 與個人資料
 
 ## 文件
 
-- [規格書](docs/SPEC.md)（1.1，含第十五節使用者新增功能）
+- [規格書](docs/SPEC.md)（1.3，對齊 v0.3 摘要與驗收現況）
 - [架構文件](docs/ARCHITECTURE.md)
 - [資料格式](docs/DATA_FORMATS.md)
 - [測試方法](docs/TESTING.md)
@@ -92,8 +97,10 @@ swift test
 | M6 | 匯入音檔、錄音檢視頁、歌詞式定位 | 完成 |
 | M7 | 分類、批次管理、跨逐字稿搜尋 | 完成 |
 | M8 | App icon、README、文件收尾 | 完成 |
+| v0.2 | 內建模板、自訂標記、專有名詞表、結構化事件草稿與編輯、本機 AI 整理、structured_notes/events/m4a 匯出、標記色票與取消 | 驗收通過 |
+| v0.3 | 整份逐字稿摘要、兩小時級長錄測試、雲端文字整理、雲端 ASR、API key 安全輸入、自訂 AI prompt、network entitlement | 進行中 |
 
-v0.1 驗收（規格書第十二節 21 條）待實機逐條檢核，清單與步驟見 `docs/TESTING.md`。
+v0.1 與 v0.2 驗收清單見 `docs/TESTING.md`；兩小時級長錄改列 v0.3 驗收項目。
 
 ## License
 

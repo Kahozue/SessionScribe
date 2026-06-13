@@ -1,7 +1,7 @@
 # SessionScribe 架構文件
 
-版本：1.1（2026-06-12；對應規格 1.1，M4 擴充與 M6 至 M8 新增）
-對應規格：`docs/SPEC.md` 1.1
+版本：1.3（2026-06-13；對應規格 1.3，補齊 v0.3 摘要與驗收現況）
+對應規格：`docs/SPEC.md` 1.3
 
 ## 一、分層架構
 
@@ -13,7 +13,9 @@
 ├─────────────────────────────────────────────────────┤
 │ 領域層（SSCore）                                      │
 │ SessionController（狀態機）、MarkerService、           │
-│ ExportService、EngineSelector、MediaClock            │
+│ EventDraftBuilder、EventOrganizer、                    │
+│ TranscriptSummarizer、ExportService、                  │
+│ EngineSelector、MediaClock                           │
 ├─────────────────────────────────────────────────────┤
 │ 基礎設施層                                            │
 │ SSAudio：AudioCaptureService、ChunkedAudioWriter、    │
@@ -62,6 +64,49 @@ ASR 引擎拋錯時，EngineSelector 依鏈降級（SpeechTranscriber → Dictat
 
 讀取與匯出時，marker 與 segment 的關聯由時間戳動態重算，寫入的 ids 只是快照。
 
+```
+右欄書籤取消 ──→ RecordingViewModel / SessionDetailModel
+    ├─ 從記憶體 markers 移除指定 marker_id
+    ├─ SessionStore.saveMarkers(_:) 暫停 append handle
+    ├─ manual_markers.jsonl.tmp 寫入剩餘 markers
+    └─ 原子改名覆蓋 manual_markers.jsonl ──→ UI 重算 inline markers
+```
+
+Cmd+1 至 Cmd+4 的視覺色票由 `MarkerVisualStyle` 依模板 slot 固定映射；中欄 `MarkerTimeline.inlineMarkers` 與右欄 `MarkerInspectorRow` 共用同一套樣式，避免事件整理後色票退回單色。
+
+### 整份逐字稿摘要
+
+```
+AI 產生摘要
+    └─ TranscriptSummarizer（FoundationModels）
+        ├─ finalized segments 全量輸入
+        ├─ 產生 content / key_points / action_items
+        ├─ needs_review 強制 true
+        ├─ source_segment_ids 包含所有 finalized segments
+        └─ transcript_summary.json 原子寫入
+```
+
+右欄載入順序固定為「逐字稿摘要 → 結構化事件 → 事件標記」。摘要是衍生資料，不會覆蓋 `live_segments.jsonl`，也不會改動 events 或 markers。
+
+### 結構化事件與本機 AI 整理
+
+```
+依標記彙整
+    └─ EventDraftBuilder
+        ├─ marker 時間窗前後 finalized segments
+        ├─ source_marker_ids / source_segment_ids
+        └─ events.json 原子寫入
+
+AI 產生草稿 / AI 整理
+    └─ EventOrganizer（FoundationModels）
+        ├─ 無 events：從 finalized segments 生成 events
+        ├─ 有 events：補齊 topic / summary / action item 等欄位
+        ├─ needs_review 強制 true
+        └─ 保留原始 content、時間軸與來源 segment
+```
+
+`EventOrganizer` 只在本機 Foundation Models 可用時啟用；不可用時 UI 顯示原因並保留 `EventDraftBuilder` 的機械路徑。整理流程不得修改原始逐字稿或移除已建立 markers。
+
 ### 崩潰恢復流程
 
 ```
@@ -79,10 +124,13 @@ App 啟動 ──→ SessionLibrary 掃描
 | MediaClock 用累計 frame 數計時 | pause 期間無 buffer 流入，媒體時間自然停止；轉寫時間戳與音訊時間軸用同一時鐘，天然一致 |
 | PCM CAF chunks，索引不合併 | CAF 對中斷寫入容錯最佳；索引是 append-only，恢復簡單；合併是可選匯出 |
 | marker 關聯動態重算 | 按標記時附近語音常在 volatile 狀態，segment 未定稿；時間戳是唯一真相 |
+| marker 取消採原子重寫 | 建立 marker 仍保留 append+flush 的現場可靠性；取消屬於事後編輯，以完整檔案原子替換避免 tombstone 規則複雜化 |
 | 沙盒無 network entitlement | Local Only 零網路由 OS 強制，entitlements 檔可被任何人驗證 |
 | Mock engine 先於 Apple engine | UI 與儲存開發完全不被新 API 可用性卡住；CI 無需 macOS 26 語音模型 |
 | 核心邏輯在 Swift Package | swift test 可 headless 執行；pbxproj 改動最小化，利於 GitHub 協作 |
 | deployment target macOS 26 | 唯一目標機器即 macOS 26；SFSpeechRecognizer 備援解決的是 locale 缺口，與 OS 版本無關 |
+| 本機 AI 整理與標記解耦 | 使用者可能沒有即時標記；v0.2 允許從 finalized segments 直接生成事件，標記仍作為高可信提示而不是唯一入口 |
+| 摘要與事件分檔 | 整份摘要與結構化事件的使用情境不同；`transcript_summary.json` 與 `events.json` 分開保存，避免摘要重新生成時影響事件編輯結果 |
 
 ## 五、TranscriptionEngine 抽象
 
@@ -112,7 +160,6 @@ public protocol TranscriptionEngine: Sendable {
 ```
 SessionScribe/
 ├── README.md
-├── LICENSE
 ├── .gitignore
 ├── docs/
 │   ├── SPEC.md
@@ -130,9 +177,9 @@ SessionScribe/
         ├── Package.swift
         ├── Sources/
         │   ├── SSCore/
-        │   │   ├── Models/        （Session、TranscriptSegment、Marker、...）
+        │   │   ├── Models/        （Session、TranscriptSegment、Marker、StructuredEvent、TranscriptSummary、...）
         │   │   ├── Storage/       （SessionStore、JSONLWriter、SessionLibrary）
-        │   │   ├── Export/        （MarkdownExporter、JSONExporter、CSVExporter）
+        │   │   ├── Export/        （MarkdownExporter、JSONExporter、CSVExporter、AudioExporter）
         │   │   └── SessionController/
         │   ├── SSAudio/
         │   ├── SSTranscription/
@@ -140,11 +187,12 @@ SessionScribe/
         │       ├── Sidebar/
         │       ├── Transcript/
         │       ├── Inspector/
-        │       └── Components/    （StatusBanner、LevelMeter、MarkerButtons）
+        │       └── Components/    （StatusBanner、LevelMeter、MarkerButtons、MarkerVisualStyle）
         └── Tests/
             ├── SSCoreTests/
             ├── SSAudioTests/
-            └── SSTranscriptionTests/
+            ├── SSTranscriptionTests/
+            └── SSUITests/
 ```
 
 ## 七、里程碑
@@ -188,8 +236,9 @@ library.json（分類定義：自訂、隱藏、排序）、metadata `category_i
 SVG 繪製 app icon 轉 icns、README 補齊（安裝、執行、權限、匯入、匯出）、v0.1.1 整體回歸。
 
 ### v0.2 與 v0.3
-v0.2：模板系統、自定義 marker type、EventDraftBuilder、設定頁、segment 播放、名詞表校正。
-v0.3：雲端整理與雲端 ASR（opt-in、加回 network entitlement）。
+v0.2 已合併且驗收通過：模板系統、自定義 marker type、專有名詞表校正、EventDraftBuilder、結構化事件檢視與編輯、EventOrganizer 本機 AI 整理、設定頁、segment 播放、`structured_notes.md` / `events.json` / `events.csv` / m4a 匯出、Cmd+1 至 4 色票、右欄 marker 書籤取消。
+v0.3 已開始：TranscriptSummarizer 整份逐字稿摘要、`transcript_summary.json`、右欄摘要／結構化事件／標記排序、兩小時級長錄驗收。
+v0.3 後續：雲端整理與雲端 ASR（opt-in、加回 network entitlement）、API key 安全輸入、自訂 AI prompt。
 
 ## 八、風險清單與對策
 

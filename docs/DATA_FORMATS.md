@@ -1,7 +1,7 @@
 # SessionScribe 資料格式
 
-版本：1.0（2026-06-12，M1 產出）
-對應規格：`docs/SPEC.md` 1.0 第八節
+版本：1.3（2026-06-13，對齊 v0.3 摘要與驗收現況）
+對應規格：`docs/SPEC.md` 1.3 第八節
 實作位置：`Packages/SessionScribeKit/Sources/SSCore/`（Models 與 Storage）
 
 ## 一、通用編碼規則
@@ -23,7 +23,9 @@
 ├── metadata.json            原子寫入（暫存檔加改名）
 ├── audio/                   M2 起寫入 CAF chunks 與 manifest.json
 ├── live_segments.jsonl      append-only，每筆 append 後 fsync
-├── manual_markers.jsonl     append-only，每筆 append 後 fsync
+├── manual_markers.jsonl     建立 marker 時 append+fsync；取消 marker 時原子重寫
+├── events.json              v0.2 結構化事件，可選，存在時原子寫入
+├── transcript_summary.json  v0.3 整份逐字稿摘要，可選，存在時原子寫入
 └── exports/                 匯出產物（M3）
 ```
 
@@ -48,7 +50,7 @@
 | `ended_at` | ISO-8601 或 null | 正常停止時刻；null 即崩潰殘留候選 |
 | `locale` | String | 如 `zh-TW` |
 | `asr_engine` | String | 本場實際使用的引擎名稱 |
-| `privacy_mode` | String | `local_only`、`text_cloud_assist`、`audio_cloud_asr`；v0.1 僅 local_only |
+| `privacy_mode` | String | `local_only`、`text_cloud_assist`、`audio_cloud_asr`；目前仍僅寫入 `local_only`，雲端模式保留給 v0.3 |
 | `audio_input` | String | 輸入裝置名稱 |
 | `recovered` | Bool | 曾經崩潰恢復 |
 | `notes` | String | 使用者備註 |
@@ -70,12 +72,16 @@
 
 `nearest_segment_ids` 只是寫入當下的快照。marker 與 segment 的關聯以 `media_seconds` 為唯一真相，讀取與匯出時由時間戳動態重算。
 
+建立 marker 時，`SessionStore.appendMarker(_:)` 走 JSONL append+fsync，確保現場按鍵後立即落盤。取消 marker 時，`SessionStore.saveMarkers(_:)` 會先關閉 append writer，將剩餘 markers 寫入暫存檔後原子改名覆蓋 `manual_markers.jsonl`，再重新開啟 append writer。這讓 UI 可真的移除右欄書籤與中欄 inline marker，而不是留下 tombstone。
+
 ## 六、JSONL 寫入與讀取語義
 
 寫入（`JSONLWriter`）：
 
 1. 開啟時定位到檔案尾端，append-only，不改寫既有內容。
 2. 每筆 append 寫入單行 JSON 加換行，隨即 `synchronize()`（fsync），App 崩潰或斷電最多損失正在寫入的那一行。
+
+例外：`manual_markers.jsonl` 的取消標記屬於事後編輯，不走 append tombstone；由 `SessionStore.saveMarkers(_:)` 以完整檔案原子重寫保存目前 marker 集合。
 
 讀取（`JSONLReader`）：
 
@@ -136,9 +142,38 @@ App 啟動的崩潰恢復流程：`SessionLibrary.recoverCrashedSessions` 標記
 
 `marker_types` 是模板四鍵之外的使用者自訂標記，錄音時自即時右欄「更多標記」選用。`lexicon` 是轉寫後的字面替換校正規則，套用點在 `TranscriptionCoordinator` 的 finalized 落盤前與 volatile 轉發前，只影響後續轉寫、不回頭改既有 segment；`to` 留空表示刪除該詞。
 
-## 十、events.json（v0.2，結構化事件）
+## 十、transcript_summary.json（v0.3，整份逐字稿摘要）
 
-對應型別 `StructuredEvent` 與文件外殼 `EventsDocument`，存於各 session 資料夾，原子寫入。由 `EventDraftBuilder` 依 marker 時間戳取前 30 後 90 秒視窗內的 finalized segments 生成草稿，必為 `needs_review: true`，可由檢視頁 Inspector 手動編輯。時間以媒體時間秒數（Double）為準，與其他檔案同軸；CSV 與 Markdown 匯出時才格式化為 HH:MM:SS。
+對應型別 `TranscriptSummary` 與文件外殼 `TranscriptSummaryDocument`，存於各 session 資料夾，原子寫入。摘要由 `TranscriptSummarizer` 以整份 finalized transcript 產生，保留所有 finalized segment ids 作來源追溯。AI 產物一律 `needs_review: true`；摘要是衍生資料，不會回寫或覆蓋 `live_segments.jsonl`。
+
+```json
+{
+  "schema_version": 1,
+  "summary": {
+    "schema_version": 1,
+    "summary_id": "sum_0001",
+    "session_id": "2026-06-15_1000_a3f2",
+    "content": "本場主要討論研究方法、資料集限制與後續修改方向。",
+    "key_points": ["資料集代表性需要補充", "研究方法需說明限制"],
+    "action_items": ["補充資料集代表性段落"],
+    "needs_review": true,
+    "source_segment_ids": ["seg_0001", "seg_0002"],
+    "created_at": "2026-06-15T02:00:00Z"
+  }
+}
+```
+
+## 十一、events.json（v0.2，結構化事件）
+
+對應型別 `StructuredEvent` 與文件外殼 `EventsDocument`，存於各 session 資料夾，原子寫入。時間以媒體時間秒數（Double）為準，與其他檔案同軸；CSV 與 Markdown 匯出時才格式化為 HH:MM:SS。
+
+v0.2 有三種產生與更新路徑：
+
+1. `EventDraftBuilder` 依 marker 時間戳取前 30 後 90 秒視窗內的 finalized segments 生成草稿，填入 `source_marker_ids` 與 `source_segment_ids`。
+2. `EventOrganizer.generateEvents(from:)` 在本機 Apple Foundation Models 可用時，可於沒有 markers 的 session 直接從 finalized segments 生成 events；這類 event 的 `source_marker_ids` 為空，來源 segment 由時間範圍回推。
+3. `EventOrganizer.organize(_:)` 可整理既有 events 的 topic、speaker、summary、action item、priority、tags 等欄位，但必須保留原始 content、時間軸、來源 segment 與來源 marker。
+
+所有機械或 AI 產生的草稿都必為 `needs_review: true`，可由檢視頁 Inspector 手動編輯。
 
 ```json
 {
@@ -171,7 +206,7 @@ App 啟動的崩潰恢復流程：`SessionLibrary.recoverCrashedSessions` 標記
 
 編輯時 `event_id`、`session_id`、`start_seconds`、`end_seconds`、`source_segment_ids`、`source_marker_ids`、`created_at` 為來源欄位不可改；可改 `topic`、`speaker`、`speaker_role`、`content`、`response_summary`、`action_item`、`priority`、`tags` 與 `needs_review`。
 
-## 十一、v0.2 匯出檔
+## 十二、v0.2 匯出檔
 
 匯出選項視窗（`ExportFormat`）在原有 transcript.md、markers.csv、session.json、JSONL 副本、原始 CAF 之外，新增：
 
