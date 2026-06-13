@@ -5,6 +5,9 @@ public enum ExportFormat: String, CaseIterable, Identifiable, Sendable {
     case markdown
     case csv
     case json
+    case structuredNotes
+    case events
+    case eventsCSV
     case rawJSONL
     case audio
 
@@ -15,6 +18,9 @@ public enum ExportFormat: String, CaseIterable, Identifiable, Sendable {
         case .markdown: "逐字稿（Markdown）"
         case .csv: "標記（CSV）"
         case .json: "完整資料（JSON）"
+        case .structuredNotes: "結構化筆記（Markdown）"
+        case .events: "結構化事件（JSON）"
+        case .eventsCSV: "結構化事件（CSV）"
         case .rawJSONL: "原始紀錄（JSONL）"
         case .audio: "錄音音檔"
         }
@@ -37,6 +43,22 @@ public enum ExportService {
         let segments = try await store.loadSegments()
         let markers = try await store.loadMarkers()
 
+        // 結構化事件來源：有 events.json 取既有，否則由 markers 即時生成草稿。
+        let needsEvents =
+            formats.contains(.structuredNotes) || formats.contains(.events)
+            || formats.contains(.eventsCSV)
+        let events: [StructuredEvent]
+        if needsEvents {
+            if let document = try EventsFile.readIfPresent(from: store.directory) {
+                events = document.events
+            } else {
+                events = EventDraftBuilder.drafts(
+                    markers: markers, segments: segments, sessionID: session.sessionID)
+            }
+        } else {
+            events = []
+        }
+
         if formats.contains(.markdown) {
             let markdown = MarkdownExporter.transcript(
                 session: session, segments: segments, markers: markers)
@@ -54,6 +76,22 @@ public enum ExportService {
             let bundle = try JSONExporter.sessionBundle(
                 session: session, segments: segments, markers: markers)
             try bundle.write(to: destination.appending(path: "session.json"), options: .atomic)
+        }
+
+        if formats.contains(.structuredNotes) {
+            let markdown = MarkdownExporter.structuredNotes(session: session, events: events)
+            try Data(markdown.utf8).write(
+                to: destination.appending(path: "structured_notes.md"), options: .atomic)
+        }
+
+        if formats.contains(.events) {
+            try EventsFile.write(EventsDocument(events: events), to: destination)
+        }
+
+        if formats.contains(.eventsCSV) {
+            let csv = CSVExporter.eventsCSV(events: events)
+            try Data(csv.utf8).write(
+                to: destination.appending(path: "events.csv"), options: .atomic)
         }
 
         if formats.contains(.rawJSONL) {
