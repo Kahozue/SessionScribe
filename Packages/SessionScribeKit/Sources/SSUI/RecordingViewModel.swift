@@ -291,6 +291,28 @@ public final class RecordingViewModel {
         persistConfig()
     }
 
+    // MARK: - 自訂標記類型（v0.2）
+
+    /// 模板四鍵之外的使用者自訂標記類型。
+    public var customMarkerTypes: [MarkerType] { libraryConfig.markerTypes }
+
+    /// 新增自訂標記類型；rawValue 與 label 皆需非空，rawValue 重複則略過。
+    public func addMarkerType(rawValue: String, label: String) {
+        let trimmedRaw = rawValue.trimmingCharacters(in: .whitespaces)
+        let trimmedLabel = label.trimmingCharacters(in: .whitespaces)
+        guard !trimmedRaw.isEmpty, !trimmedLabel.isEmpty else { return }
+        guard !libraryConfig.markerTypes.contains(where: { $0.rawValue == trimmedRaw }) else {
+            return
+        }
+        libraryConfig.markerTypes.append(MarkerType(rawValue: trimmedRaw, label: trimmedLabel))
+        persistConfig()
+    }
+
+    public func removeMarkerTypes(atOffsets offsets: IndexSet) {
+        libraryConfig.markerTypes.remove(atOffsets: offsets)
+        persistConfig()
+    }
+
     // MARK: - 跨逐字稿搜尋（規格 1.1 第 9 項）
 
     public func search(_ query: String) -> [SearchHit] {

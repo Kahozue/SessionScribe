@@ -16,6 +16,10 @@ public struct SettingsView: View {
                 .tabItem {
                     Label("顯示", systemImage: "textformat.size")
                 }
+            MarkerSettingsTab(model: model)
+                .tabItem {
+                    Label("標記", systemImage: "bookmark")
+                }
             TranscriptionSettingsTab(model: model)
                 .tabItem {
                     Label("轉寫", systemImage: "waveform.badge.mic")
@@ -60,6 +64,54 @@ private struct DisplaySettingsTab: View {
                     Text("深色").tag("dark")
                 }
                 .pickerStyle(.segmented)
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct MarkerSettingsTab: View {
+    @Bindable var model: RecordingViewModel
+    @State private var newRaw = ""
+    @State private var newLabel = ""
+
+    private var canAdd: Bool {
+        !newRaw.trimmingCharacters(in: .whitespaces).isEmpty
+            && !newLabel.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    var body: some View {
+        Form {
+            Section("自訂標記類型") {
+                Text("模板四鍵之外的額外標記，錄音時可從即時右欄的「更多標記」選用。type 是寫入紀錄的識別碼（建議英數），標籤是顯示文字。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if model.customMarkerTypes.isEmpty {
+                    Text("尚無自訂標記。")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(model.customMarkerTypes, id: \.rawValue) { type in
+                        HStack(spacing: 8) {
+                            Text(type.label)
+                            Text(type.rawValue)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                        }
+                    }
+                    .onDelete { model.removeMarkerTypes(atOffsets: $0) }
+                }
+                HStack(spacing: 8) {
+                    TextField("type（英數）", text: $newRaw)
+                    TextField("標籤", text: $newLabel)
+                    Button("新增") {
+                        model.addMarkerType(rawValue: newRaw, label: newLabel)
+                        newRaw = ""
+                        newLabel = ""
+                    }
+                    .disabled(!canAdd)
+                }
             }
         }
         .formStyle(.grouped)
