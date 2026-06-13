@@ -10,6 +10,7 @@ public enum ExportFormat: String, CaseIterable, Identifiable, Sendable {
     case eventsCSV
     case rawJSONL
     case audio
+    case audioM4A
 
     public var id: String { rawValue }
 
@@ -22,7 +23,8 @@ public enum ExportFormat: String, CaseIterable, Identifiable, Sendable {
         case .events: "結構化事件（JSON）"
         case .eventsCSV: "結構化事件（CSV）"
         case .rawJSONL: "原始紀錄（JSONL）"
-        case .audio: "錄音音檔"
+        case .audio: "錄音音檔（原始 CAF）"
+        case .audioM4A: "錄音音檔（m4a）"
         }
     }
 }
@@ -114,6 +116,17 @@ public enum ExportService {
                     try fileManager.removeItem(at: target)
                 }
                 try fileManager.copyItem(at: source, to: target)
+            }
+        }
+
+        if formats.contains(.audioM4A) {
+            let audioDirectory = store.directory.appending(path: SessionFiles.audioDirectory)
+            if (try? AudioManifestFile.readIfPresent(from: audioDirectory))??.chunks.isEmpty
+                == false
+            {
+                try await AudioExporter.exportM4A(
+                    audioDirectory: audioDirectory,
+                    to: destination.appending(path: "\(session.sessionID).m4a"))
             }
         }
     }
