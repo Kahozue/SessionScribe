@@ -12,6 +12,7 @@ public actor AppleSpeechEngine: TranscriptionEngine {
         case notStarted
         case formatUnavailable
         case conversionFailed
+        case localeUnsupported
     }
 
     public nonisolated let info = EngineInfo(name: "SpeechAnalyzer", isOnDevice: true)
@@ -38,12 +39,13 @@ public actor AppleSpeechEngine: TranscriptionEngine {
 
     public func availability(for locale: Locale) async -> EngineAvailability {
         let supported = await SpeechTranscriber.supportedLocales
-        guard supported.contains(where: { Self.sameLanguage($0, locale) }) else {
+        guard let match = Self.bestSupported(for: locale, from: supported) else {
             return .unsupported
         }
         let installed = await SpeechTranscriber.installedLocales
-        return installed.contains(where: { Self.sameLanguage($0, locale) })
-            ? .available : .requiresDownload
+        return installed.contains(where: {
+            $0.identifier(.bcp47) == match.identifier(.bcp47)
+        }) ? .available : .requiresDownload
     }
 
     /// 模型未安裝時觸發 AssetInventory 下載。
@@ -56,7 +58,11 @@ public actor AppleSpeechEngine: TranscriptionEngine {
     public func prepare(
         locale: Locale, progress: @escaping @Sendable (Double) -> Void
     ) async throws {
-        let transcriber = makeTranscriber(locale: locale)
+        let supported = await SpeechTranscriber.supportedLocales
+        guard let match = Self.bestSupported(for: locale, from: supported) else {
+            throw EngineError.localeUnsupported
+        }
+        let transcriber = makeTranscriber(locale: match)
         guard
             let request = try await AssetInventory.assetInstallationRequest(
                 supporting: [transcriber])
@@ -83,8 +89,10 @@ public actor AppleSpeechEngine: TranscriptionEngine {
 
     public func start(sessionID: String, locale: Locale) async throws {
         self.sessionID = sessionID
-        self.language = locale.identifier
-        let transcriber = makeTranscriber(locale: locale)
+        let supported = await SpeechTranscriber.supportedLocales
+        let resolved = Self.bestSupported(for: locale, from: supported) ?? locale
+        self.language = resolved.identifier
+        let transcriber = makeTranscriber(locale: resolved)
         self.transcriber = transcriber
         guard
             let format = await SpeechAnalyzer.bestAvailableAudioFormat(
@@ -206,8 +214,26 @@ public actor AppleSpeechEngine: TranscriptionEngine {
         return (start, end)
     }
 
-    private static func sameLanguage(_ a: Locale, _ b: Locale) -> Bool {
-        a.identifier(.bcp47) == b.identifier(.bcp47)
+    /// 把請求的 locale 解析成 SpeechTranscriber 實際支援的：精確 bcp47 優先；
+    /// 請求未指定地區（如 en、ja）退而取同語言碼的第一個支援地區（en-US、ja-JP）；
+    /// 請求有指定地區（如 zh-TW）只接受精確相符，以區分繁簡。
+    static func bestSupported(for requested: Locale, from supported: [Locale]) -> Locale? {
+        if let exact = supported.first(where: {
+            $0.identifier(.bcp47) == requested.identifier(.bcp47)
+        }) {
+            return exact
+        }
+        guard requested.region == nil else { return nil }
+        let language = requested.language.languageCode?.identifier
+        let candidates = supported.filter {
+            $0.language.languageCode?.identifier == language
+        }
+        // 優先取該語言的慣用地區（en→US、ja→JP），否則第一個支援地區。
+        let preferredRegion = Locale.Language(
+            identifier: Locale.Language(identifier: language ?? "").maximalIdentifier
+        ).region?.identifier
+        return candidates.first { $0.region?.identifier == preferredRegion }
+            ?? candidates.first
     }
 
     private func convert(
