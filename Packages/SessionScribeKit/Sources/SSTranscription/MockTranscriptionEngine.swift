@@ -34,6 +34,8 @@ public actor MockTranscriptionEngine: TranscriptionEngine {
     private var finalizedContinuation: AsyncStream<TranscriptSegment>.Continuation?
     private var volatileContinuation: AsyncStream<VolatileUpdate>.Continuation?
     private let now: @Sendable () -> Date
+    /// 測試用：記錄收到的詞彙提示（v0.2 名詞表第二層）。
+    public private(set) var receivedContextualStrings: [String] = []
 
     public init(
         script: [MockUtterance] = MockTranscriptionEngine.defaultScript,
@@ -54,6 +56,10 @@ public actor MockTranscriptionEngine: TranscriptionEngine {
         MockUtterance(text: "建議把相關工作一節的比較表加上推論延遲欄位。", startSeconds: 40, endSeconds: 47),
         MockUtterance(text: "好的，這部分我會在修訂版補上。", startSeconds: 49, endSeconds: 54),
     ]
+
+    public func setContextualStrings(_ strings: [String]) {
+        receivedContextualStrings = strings
+    }
 
     public func availability(for locale: Locale) -> EngineAvailability {
         .available

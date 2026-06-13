@@ -25,10 +25,16 @@ public actor AppleSpeechEngine: TranscriptionEngine {
     private var sessionID = ""
     private var language = "zh-TW"
     private var segmentCount = 0
+    private var contextualStrings: [String] = []
     private var finalizedContinuation: AsyncStream<TranscriptSegment>.Continuation?
     private var volatileContinuation: AsyncStream<VolatileUpdate>.Continuation?
 
     public init() {}
+
+    /// 詞彙提示（v0.2 名詞表第二層），於 start 套到 analyzer 的 AnalysisContext。
+    public func setContextualStrings(_ strings: [String]) {
+        contextualStrings = strings
+    }
 
     public func availability(for locale: Locale) async -> EngineAvailability {
         let supported = await SpeechTranscriber.supportedLocales
@@ -67,6 +73,14 @@ public actor AppleSpeechEngine: TranscriptionEngine {
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         self.analyzer = analyzer
         try await analyzer.start(inputSequence: inputSequence)
+        // 詞彙提示：AnalysisContext.contextualStrings[.general]，於餵入音訊前設定。
+        // 來源：developer.apple.com/documentation/speech/speechanalyzer/setcontext(_:)
+        //       /documentation/speech/analysiscontext/contextualstrings
+        if !contextualStrings.isEmpty {
+            let context = AnalysisContext()
+            context.contextualStrings = [.general: contextualStrings]
+            try await analyzer.setContext(context)
+        }
         resultsTask = Task {
             do {
                 for try await result in transcriber.results {
