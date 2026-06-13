@@ -709,6 +709,12 @@ public struct RootView: View {
 
     // MARK: - Toolbar
 
+    /// 主畫面雲端狀態標的顯示條件：總開關開且引擎=雲端（v0.3 Text Cloud Assist）。
+    private var cloudAssistActive: Bool {
+        let settings = CloudLLMSettings.load()
+        return settings.enabled && settings.engine == .cloud
+    }
+
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
@@ -721,8 +727,11 @@ public struct RootView: View {
             .help("匯入音訊檔作為新 session，可選擇是否轉寫")
         }
         ToolbarItem(placement: .principal) {
-            Text("SessionScribe")
-                .appFont(.headline)
+            HStack(spacing: 8) {
+                Text("SessionScribe")
+                    .appFont(.headline)
+                PrivacyModeBadge(mode: cloudAssistActive ? .textCloudAssist : .localOnly)
+            }
         }
         ToolbarItemGroup {
             recordingOptionsMenu
