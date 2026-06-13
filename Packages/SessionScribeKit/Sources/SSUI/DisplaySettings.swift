@@ -1,5 +1,36 @@
 import SwiftUI
 
+enum AppFontStyle: Sendable {
+    case title2
+    case title3
+    case headline
+    case subheadline
+    case body
+    case callout
+    case caption
+    case caption2
+
+    var basePointSize: Double {
+        switch self {
+        case .title2: 22
+        case .title3: 20
+        case .headline: 17
+        case .subheadline: 15
+        case .body: DisplaySettings.defaultFontSize
+        case .callout: 16
+        case .caption: 12
+        case .caption2: 11
+        }
+    }
+
+    var defaultWeight: Font.Weight {
+        switch self {
+        case .headline: .semibold
+        default: .regular
+        }
+    }
+}
+
 /// 顯示設定的 AppStorage 鍵與輔助。主視窗與浮動視窗共用同一組設定。
 public enum DisplaySettings {
     public static let fontSizeKey = "transcriptFontSize"
@@ -14,10 +45,29 @@ public enum DisplaySettings {
     public static let defaultFontSize = 16.0
     public static let fontSizeRange = 11.0...28.0
 
-    /// 全域 UI（chrome：工具列、側欄、Inspector、設定、按鈕等語意字體）放大級距。
-    /// 預設為系統的 .large，提到 .xLarge 等於整體放大約一號；
-    /// 逐字稿本文是固定點數、不受此影響，另由 fontSize 控制。
+    /// 全域 UI 放大級距。顯式字體另由 fontSize 轉換成點數，這裡保留給系統控制項。
     public static let uiTypeSize: DynamicTypeSize = .xLarge
+
+    static func clampedFontSize(_ raw: Double) -> Double {
+        min(max(raw, fontSizeRange.lowerBound), fontSizeRange.upperBound)
+    }
+
+    static func scaledFontSize(for style: AppFontStyle, baseFontSize: Double) -> Double {
+        let scale = clampedFontSize(baseFontSize) / defaultFontSize
+        return style.basePointSize * scale
+    }
+
+    static func font(
+        _ style: AppFontStyle,
+        baseFontSize: Double,
+        weight: Font.Weight? = nil,
+        design: Font.Design = .default
+    ) -> Font {
+        .system(
+            size: scaledFontSize(for: style, baseFontSize: baseFontSize),
+            weight: weight ?? style.defaultWeight,
+            design: design)
+    }
 
     /// "system" 回傳 nil（跟隨系統），"light"、"dark" 強制指定。
     public static func colorScheme(for raw: String) -> ColorScheme? {
@@ -26,5 +76,66 @@ public enum DisplaySettings {
         case "dark": .dark
         default: nil
         }
+    }
+}
+
+extension View {
+    func appTypography() -> some View {
+        modifier(AppTypographyModifier())
+    }
+
+    func appFont(
+        _ style: AppFontStyle,
+        weight: Font.Weight? = nil,
+        design: Font.Design = .default,
+        monospacedDigit: Bool = false,
+        italic: Bool = false
+    ) -> some View {
+        modifier(
+            AppFontModifier(
+                style: style,
+                weight: weight,
+                design: design,
+                monospacedDigit: monospacedDigit,
+                italic: italic))
+    }
+}
+
+private struct AppTypographyModifier: ViewModifier {
+    @AppStorage(DisplaySettings.fontSizeKey)
+    private var fontSize = DisplaySettings.defaultFontSize
+
+    func body(content: Content) -> some View {
+        content.font(DisplaySettings.font(.body, baseFontSize: fontSize))
+    }
+}
+
+private struct AppFontModifier: ViewModifier {
+    @AppStorage(DisplaySettings.fontSizeKey)
+    private var fontSize = DisplaySettings.defaultFontSize
+
+    let style: AppFontStyle
+    let weight: Font.Weight?
+    let design: Font.Design
+    let monospacedDigit: Bool
+    let italic: Bool
+
+    private var resolvedFont: Font {
+        var font = DisplaySettings.font(
+            style,
+            baseFontSize: fontSize,
+            weight: weight,
+            design: design)
+        if monospacedDigit {
+            font = font.monospacedDigit()
+        }
+        if italic {
+            font = font.italic()
+        }
+        return font
+    }
+
+    func body(content: Content) -> some View {
+        content.font(resolvedFont)
     }
 }

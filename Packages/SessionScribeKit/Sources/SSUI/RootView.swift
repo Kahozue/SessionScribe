@@ -45,6 +45,7 @@ public struct RootView: View {
         .toolbar(removing: .title)
         .navigationTitle("SessionScribe")
         .task { await model.onLaunch() }
+        .appTypography()
         .dynamicTypeSize(DisplaySettings.uiTypeSize)
         .preferredColorScheme(DisplaySettings.colorScheme(for: appearance))
         .onChange(of: model.state) { _, newState in
@@ -187,7 +188,7 @@ public struct RootView: View {
                 .pickerStyle(.inline)
             } label: {
                 Label(model.sortOrder.displayName, systemImage: "arrow.up.arrow.down")
-                    .font(.callout)
+                    .appFont(.callout)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -197,7 +198,7 @@ public struct RootView: View {
                 showCategoryManager = true
             } label: {
                 Label("分類", systemImage: "folder.badge.gearshape")
-                    .font(.callout)
+                    .appFont(.callout)
             }
             .buttonStyle(.borderless)
             .help("管理分類（新增、改名、隱藏、刪除）")
@@ -266,7 +267,7 @@ public struct RootView: View {
     private var batchActionBar: some View {
         HStack(spacing: 8) {
             Text("已選 \(sidebarSelection.count) 個")
-                .font(.callout)
+                .appFont(.callout)
                 .foregroundStyle(.secondary)
             Spacer()
             Menu {
@@ -320,15 +321,15 @@ public struct RootView: View {
                                         ? "bookmark.fill" : "text.bubble")
                                 .foregroundStyle(.secondary)
                                 Text(hit.sessionTitle)
-                                    .font(.callout)
+                                    .appFont(.callout)
                                     .lineLimit(1)
                                 Spacer()
                                 Text(TimeFormatting.hms(hit.mediaSeconds))
-                                    .font(.caption2.monospacedDigit())
+                                    .appFont(.caption2, monospacedDigit: true)
                                     .foregroundStyle(.secondary)
                             }
                             Text(hit.snippet)
-                                .font(.caption)
+                                .appFont(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
                         }
@@ -369,7 +370,7 @@ public struct RootView: View {
     /// 區段標頭：加重字級與顏色（修正過淡過細），並作為拖放目標收 session。
     private func sectionHeader(_ title: String, dropCategoryID: String?) -> some View {
         Text(title)
-            .font(.subheadline.weight(.semibold))
+            .appFont(.subheadline, weight: .semibold)
             .foregroundStyle(.primary)
             .dropDestination(for: String.self) { ids, _ in
                 model.assignCategory(dropCategoryID, to: Set(ids))
@@ -480,7 +481,7 @@ public struct RootView: View {
 
     private func badge(_ text: String) -> some View {
         Text(text)
-            .font(.caption2)
+            .appFont(.caption2)
             .padding(.horizontal, 4)
             .padding(.vertical, 1)
             .background(.quaternary, in: Capsule())
@@ -624,7 +625,7 @@ public struct RootView: View {
     private var inspectorPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("事件標記")
-                .font(.headline)
+                .appFont(.headline)
             MarkerButtonsView(
                 markerTypes: model.activeMarkerTypes,
                 showLetterHints: model.activeTemplate.id == "thesis_defense",
@@ -646,7 +647,7 @@ public struct RootView: View {
             }
             if model.markers.isEmpty {
                 Text(markerHint)
-                    .font(.callout)
+                    .appFont(.callout)
                     .foregroundStyle(.secondary)
             } else {
                 List(model.markers.reversed()) { marker in
@@ -695,7 +696,7 @@ public struct RootView: View {
         }
         ToolbarItem(placement: .principal) {
             Text("SessionScribe")
-                .font(.headline)
+                .appFont(.headline)
         }
         ToolbarItemGroup {
             recordingOptionsMenu

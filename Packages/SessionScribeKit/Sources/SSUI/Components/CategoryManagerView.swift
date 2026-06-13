@@ -10,10 +10,10 @@ struct CategoryManagerView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("管理分類")
-                .font(.headline)
+                .appFont(.headline)
             if model.libraryConfig.categories.isEmpty {
                 Text("尚無分類。新增後可在側欄把 session 拖入或用右鍵選單移動。")
-                    .font(.callout)
+                    .appFont(.callout)
                     .foregroundStyle(.secondary)
             } else {
                 List(model.libraryConfig.categories) { category in
@@ -55,6 +55,7 @@ struct CategoryManagerView: View {
         }
         .padding(16)
         .frame(width: 380)
+        .appTypography()
     }
 
     private func addCategory() {

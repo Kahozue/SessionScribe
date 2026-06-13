@@ -10,7 +10,7 @@ struct SessionInfoView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(session.title)
-                .font(.headline)
+                .appFont(.headline)
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
                 row("Session ID", session.sessionID)
                 row("來源", session.source == .imported ? "匯入" : "錄音")
@@ -26,7 +26,7 @@ struct SessionInfoView: View {
             }
             if !session.notes.isEmpty {
                 Text("備註：\(session.notes)")
-                    .font(.callout)
+                    .appFont(.callout)
             }
             HStack {
                 Spacer()
@@ -36,6 +36,7 @@ struct SessionInfoView: View {
         }
         .padding(16)
         .frame(width: 380)
+        .appTypography()
     }
 
     private func row(_ label: String, _ value: String) -> some View {
@@ -45,7 +46,7 @@ struct SessionInfoView: View {
             Text(value)
                 .textSelection(.enabled)
         }
-        .font(.callout)
+        .appFont(.callout)
     }
 
     private static func format(_ date: Date) -> String {

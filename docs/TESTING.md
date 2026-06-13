@@ -40,7 +40,7 @@ swift test --package-path Packages/SessionScribeKit
 | LibraryConfig marker types、lexicon | 舊檔相容、自訂標記與名詞表 round-trip |
 | TranscriptSearchService | 跨 session 命中、marker note、大小寫、空查詢 |
 | EventDraftBuilder、EventOrganizer | 依 marker 生成草稿、無 marker 時 AI 從 segments 生成 events、整理後保留來源欄位並強制 needs_review |
-| TranscriptSummary、TranscriptSummarizer | transcript_summary.json、整份 finalized 逐字稿來源追溯、needs_review |
+| TranscriptSummary、TranscriptSummarizer | transcript_summary.json、整份 finalized 逐字稿來源追溯、摘要區無需複查標籤 |
 | MarkerVisualStyle、MarkerTimeline | Cmd+1 至 4 色票、模板 slot 取色、事件整理後 inline marker 保留 |
 
 音訊測試使用合成 buffer（固定值與正弦波），不經過麥克風；寫出的 CAF 以
@@ -74,7 +74,7 @@ swift test --package-path Packages/SessionScribeKit
    關閉後新場次狀態徽章應顯示 SpeechAnalyzer。
 3. **匯出**：停止後按匯出選資料夾，確認 transcript.md、markers.csv、
    session.json、兩個 jsonl 副本；逐字稿多選數段後 Inspector 匯出選取。
-4. **浮動視窗**：開啟浮動逐字稿，視窗應置頂、可調大小，字級按鈕與主視窗同步。
+4. **浮動視窗**：開啟浮動逐字稿，視窗應置頂、可調大小，字級按鈕與主視窗同步，標題列與逐字稿內文都會跟著調整。
 5. **外觀**：深淺色切換下檢查逐字稿、標記、徽章可讀性。
 6. **匯入與檢視**：匯入一個 m4a，選立即轉寫；完成後檢視頁播放，
    當前段落應放大置中（歌詞效果），點任一段跳轉播放位置，時間一致。
@@ -94,6 +94,7 @@ swift test --package-path Packages/SessionScribeKit
 
 ## 五、v0.3 實機驗證清單（手動）
 
-1. **整份逐字稿摘要**：有 finalized 逐字稿的 session 進入檢視頁，右欄最上方顯示「逐字稿摘要」，下方依序是「結構化事件」與「事件標記」。按「AI 產生摘要」後產生摘要、重點、待辦與需複查標記；重開 session 後摘要仍在。摘要區 chevron 可折疊且不影響事件與標記區。
-2. **摘要可用性**：沒有逐字稿時摘要按鈕停用；本機 Apple Intelligence 未開或模型未就緒時，按鈕停用並顯示原因。
-3. **兩小時級長錄**：磁碟用量約 350MB 一小時、記憶體無顯著成長、chunk 輪替每五分鐘一次無爆音斷點。
+1. **整份逐字稿摘要**：有 finalized 逐字稿的 session 進入檢視頁，右欄最上方顯示「逐字稿摘要」，下方依序是「結構化事件」與「事件標記」。按「AI 產生摘要」後產生摘要、重點與待辦；摘要區不顯示需複查標籤，重開 session 後摘要仍在。摘要區 chevron 可折疊且不影響事件與標記區。
+2. **全畫面字級**：設定頁「介面字級」滑桿調整後，側欄、工具列、右欄摘要／事件／標記、設定頁、浮動視窗與逐字稿內文都同步變大或變小，不只中欄逐字稿正文。
+3. **摘要可用性**：沒有逐字稿時摘要按鈕停用；本機 Apple Intelligence 未開或模型未就緒時，按鈕停用並顯示原因。
+4. **兩小時級長錄**：磁碟用量約 350MB 一小時、記憶體無顯著成長、chunk 輪替每五分鐘一次無爆音斷點。

@@ -72,7 +72,7 @@ struct SegmentRowView: View {
                     "\(TimeFormatting.hms(segment.startSeconds)) - "
                         + TimeFormatting.hms(segment.endSeconds)
                 )
-                .font(.caption.monospacedDigit())
+                .appFont(.caption, monospacedDigit: true)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 1)
@@ -130,7 +130,7 @@ struct MarkerChip: View {
 
     var body: some View {
         Label(marker.label, systemImage: "bookmark.fill")
-            .font(.caption2)
+            .appFont(.caption2)
             .foregroundStyle(style.tint)
             .padding(.horizontal, 6)
             .padding(.vertical, 1)

@@ -27,6 +27,7 @@ public struct SettingsView: View {
         }
         .frame(width: 460)
         .padding(.bottom, 8)
+        .appTypography()
         .dynamicTypeSize(DisplaySettings.uiTypeSize)
     }
 }
@@ -39,7 +40,7 @@ private struct DisplaySettingsTab: View {
 
     var body: some View {
         Form {
-            Section("逐字稿字級") {
+            Section("介面字級") {
                 HStack {
                     Slider(
                         value: $fontSize,
@@ -49,11 +50,11 @@ private struct DisplaySettingsTab: View {
                         Text("字級")
                     }
                     Text("\(Int(fontSize)) pt")
-                        .font(.callout.monospacedDigit())
+                        .appFont(.callout, monospacedDigit: true)
                         .frame(width: 44, alignment: .trailing)
                 }
                 Text("範例文字：請問你為什麼選擇這個資料集？")
-                    .font(.system(size: fontSize))
+                    .appFont(.body)
                 Button("重設為預設值") {
                     fontSize = DisplaySettings.defaultFontSize
                 }
@@ -85,18 +86,18 @@ private struct MarkerSettingsTab: View {
         Form {
             Section("自訂標記類型") {
                 Text("模板四鍵之外的額外標記，錄音時可從即時右欄的「更多標記」選用。type 是寫入紀錄的識別碼（建議英數），標籤是顯示文字。")
-                    .font(.caption)
+                    .appFont(.caption)
                     .foregroundStyle(.secondary)
                 if model.customMarkerTypes.isEmpty {
                     Text("尚無自訂標記。")
-                        .font(.callout)
+                        .appFont(.callout)
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(model.customMarkerTypes, id: \.rawValue) { type in
                         HStack(spacing: 8) {
                             Text(type.label)
                             Text(type.rawValue)
-                                .font(.caption.monospaced())
+                                .appFont(.caption, design: .monospaced)
                                 .foregroundStyle(.secondary)
                             Spacer()
                         }
@@ -135,23 +136,23 @@ private struct TranscriptionSettingsTab: View {
             Section("引擎") {
                 Toggle("使用 Mock 引擎（開發測試用，下一場生效）", isOn: $useMockEngine)
                 Text("正常使用時保持關閉，由降級鏈自動選擇：SpeechAnalyzer、SFSpeechRecognizer、純錄音。")
-                    .font(.caption)
+                    .appFont(.caption)
                     .foregroundStyle(.secondary)
             }
             Section("專有名詞校正表") {
                 Text("轉寫產生時做全文字面替換，下一場轉寫生效。中英夾雜術語可在此校正，校正為留空表示刪除該詞。")
-                    .font(.caption)
+                    .appFont(.caption)
                     .foregroundStyle(.secondary)
                 if model.libraryConfig.lexicon.isEmpty {
                     Text("尚無規則。")
-                        .font(.callout)
+                        .appFont(.callout)
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(model.libraryConfig.lexicon) { rule in
                         HStack(spacing: 8) {
                             Text(rule.from)
                             Image(systemName: "arrow.right")
-                                .font(.caption)
+                                .appFont(.caption)
                                 .foregroundStyle(.secondary)
                             Text(rule.to.isEmpty ? "（刪除）" : rule.to)
                                 .foregroundStyle(rule.to.isEmpty ? .secondary : .primary)
@@ -163,7 +164,7 @@ private struct TranscriptionSettingsTab: View {
                 HStack(spacing: 8) {
                     TextField("原詞", text: $newFrom)
                     Image(systemName: "arrow.right")
-                        .font(.caption)
+                        .appFont(.caption)
                         .foregroundStyle(.secondary)
                     TextField("校正為", text: $newTo)
                     Button("新增") {

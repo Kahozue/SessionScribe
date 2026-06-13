@@ -22,7 +22,7 @@ public struct TranscriptSummary: Codable, Equatable, Sendable, Identifiable {
         content: String,
         keyPoints: [String] = [],
         actionItems: [String] = [],
-        needsReview: Bool = true,
+        needsReview: Bool = false,
         sourceSegmentIDs: [String],
         createdAt: Date
     ) {

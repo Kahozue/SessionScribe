@@ -6,7 +6,7 @@ import Testing
 @Suite("TranscriptSummary 模型（transcript_summary.json，v0.3）")
 struct TranscriptSummaryTests {
 
-    @Test("編碼輸出 snake_case 鍵且保留來源 segments 與 needs_review")
+    @Test("編碼輸出 snake_case 鍵且摘要預設不標需複查")
     func encodingMatchesSpec() throws {
         let summary = TranscriptSummary(
             summaryID: "sum_0001",
@@ -14,7 +14,6 @@ struct TranscriptSummaryTests {
             content: "本場主要討論研究方法與資料集限制。",
             keyPoints: ["研究方法需補強", "資料集代表性需說明"],
             actionItems: ["補充資料集代表性段落"],
-            needsReview: true,
             sourceSegmentIDs: ["seg_1", "seg_2"],
             createdAt: Date(timeIntervalSince1970: 1_781_488_800))
 
@@ -24,7 +23,7 @@ struct TranscriptSummaryTests {
         #expect(object["session_id"] as? String == "s1")
         #expect(object["key_points"] as? [String] == ["研究方法需補強", "資料集代表性需說明"])
         #expect(object["action_items"] as? [String] == ["補充資料集代表性段落"])
-        #expect(object["needs_review"] as? Bool == true)
+        #expect(object["needs_review"] as? Bool == false)
         #expect(object["source_segment_ids"] as? [String] == ["seg_1", "seg_2"])
     }
 
@@ -41,7 +40,6 @@ struct TranscriptSummaryTests {
             content: "摘要內容",
             keyPoints: ["重點"],
             actionItems: [],
-            needsReview: true,
             sourceSegmentIDs: ["seg_1"],
             createdAt: Date(timeIntervalSince1970: 100)))
 
@@ -54,7 +52,7 @@ struct TranscriptSummaryTests {
 @Suite("TranscriptSummarizer 套回邏輯（v0.3 本機 LLM 摘要）")
 struct TranscriptSummarizerTests {
 
-    @Test("從整份 finalized 逐字稿建立摘要，來源涵蓋所有 finalized segments 且 needs_review true")
+    @Test("從整份 finalized 逐字稿建立摘要，來源涵蓋所有 finalized segments 且不標需複查")
     func buildSummaryUsesAllFinalSegmentsAsSources() {
         let segments = [
             TranscriptSegment(
@@ -85,7 +83,7 @@ struct TranscriptSummarizerTests {
         #expect(summary.keyPoints == ["第一重點", "第二重點"])
         #expect(summary.actionItems == ["待辦"])
         #expect(summary.sourceSegmentIDs == ["seg_1", "seg_2"])
-        #expect(summary.needsReview)
+        #expect(!summary.needsReview)
         #expect(summary.createdAt == Date(timeIntervalSince1970: 100))
     }
 }

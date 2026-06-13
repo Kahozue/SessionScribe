@@ -258,6 +258,12 @@ final class SessionDetailViewModel {
 
 /// 錄音檢視頁（規格 1.1 第 5、10 項）：metadata、chunk 串接播放、
 /// 進度條、倍速、歌詞模式與列表模式雙顯示。
+enum SummaryBadgePolicy {
+    static func showsReviewBadge(for _: TranscriptSummary?) -> Bool {
+        false
+    }
+}
+
 public struct SessionDetailView: View {
     @State private var model: SessionDetailViewModel
     /// 搜尋跳轉時要定位的 segment。
@@ -297,6 +303,7 @@ public struct SessionDetailView: View {
             .inspector(isPresented: $showInspector) {
                 detailInspector
             }
+            .appTypography()
     }
 
     private var content: some View {
@@ -381,13 +388,13 @@ public struct SessionDetailView: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: summaryExpanded ? "chevron.down" : "chevron.right")
-                        .font(.caption)
+                        .appFont(.caption)
                     Text("逐字稿摘要")
-                        .font(.headline)
+                        .appFont(.headline)
                     Spacer()
-                    if model.summary?.needsReview == true {
+                    if SummaryBadgePolicy.showsReviewBadge(for: model.summary) {
                         Text("需複查")
-                            .font(.caption2)
+                            .appFont(.caption2)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
                             .background(.orange.opacity(0.22), in: Capsule())
@@ -414,10 +421,10 @@ public struct SessionDetailView: View {
             if model.summarizing {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
-                    Text("AI 產生摘要中…").font(.caption).foregroundStyle(.secondary)
+                    Text("AI 產生摘要中…").appFont(.caption).foregroundStyle(.secondary)
                 }
             } else if let message = model.summaryAvailabilityMessage, !model.segments.isEmpty {
-                Text(message).font(.caption).foregroundStyle(.secondary)
+                Text(message).appFont(.caption).foregroundStyle(.secondary)
             }
 
             if summaryExpanded {
@@ -429,7 +436,7 @@ public struct SessionDetailView: View {
                             ? "這個 session 還沒有逐字稿。先轉錄，再產生摘要。"
                             : "尚未產生摘要。"
                     )
-                    .font(.callout)
+                    .appFont(.callout)
                     .foregroundStyle(.secondary)
                 }
             }
@@ -440,22 +447,22 @@ public struct SessionDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             if summary.content.isEmpty {
                 Text("摘要內容空白，請重新產生。")
-                    .font(.callout)
+                    .appFont(.callout)
                     .foregroundStyle(.secondary)
             } else {
                 Text(summary.content)
-                    .font(.callout)
+                    .appFont(.callout)
                     .textSelection(.enabled)
             }
 
             if !summary.keyPoints.isEmpty {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("重點")
-                        .font(.caption.bold())
+                        .appFont(.caption, weight: .bold)
                         .foregroundStyle(.secondary)
                     ForEach(summary.keyPoints, id: \.self) { point in
                         Text("• \(point)")
-                            .font(.caption)
+                            .appFont(.caption)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
                     }
@@ -465,11 +472,11 @@ public struct SessionDetailView: View {
             if !summary.actionItems.isEmpty {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("待辦")
-                        .font(.caption.bold())
+                        .appFont(.caption, weight: .bold)
                         .foregroundStyle(.secondary)
                     ForEach(summary.actionItems, id: \.self) { item in
                         Text("• \(item)")
-                            .font(.caption)
+                            .appFont(.caption)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
                     }
@@ -477,7 +484,7 @@ public struct SessionDetailView: View {
             }
 
             Text("來源：\(summary.sourceSegmentIDs.count) 段逐字稿")
-                .font(.caption2)
+                .appFont(.caption2)
                 .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -496,11 +503,11 @@ public struct SessionDetailView: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: eventsExpanded ? "chevron.down" : "chevron.right")
-                        .font(.caption)
+                        .appFont(.caption)
                     Text(
                         model.events.isEmpty ? "結構化事件" : "結構化事件（\(model.events.count)）"
                     )
-                    .font(.headline)
+                    .appFont(.headline)
                     Spacer()
                 }
             }
@@ -537,18 +544,18 @@ public struct SessionDetailView: View {
             if model.organizing {
                 if model.organizeProgress > 0 {
                     ProgressView(value: model.organizeProgress) {
-                        Text("AI 整理中 \(Int(model.organizeProgress * 100))%").font(.caption)
+                        Text("AI 整理中 \(Int(model.organizeProgress * 100))%").appFont(.caption)
                     }
                 } else {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.small)
-                        Text("AI 處理中…").font(.caption).foregroundStyle(.secondary)
+                        Text("AI 處理中…").appFont(.caption).foregroundStyle(.secondary)
                     }
                 }
             } else if let message = model.organizeAvailabilityMessage,
                 !model.events.isEmpty || !model.segments.isEmpty
             {
-                Text(message).font(.caption).foregroundStyle(.secondary)
+                Text(message).appFont(.caption).foregroundStyle(.secondary)
             }
 
             if eventsExpanded {
@@ -558,7 +565,7 @@ public struct SessionDetailView: View {
                             ? "這個 session 還沒有逐字稿。先轉錄，再用「AI 產生草稿」或標記後「依標記彙整」。"
                             : "尚未有草稿。有標記可按「依標記彙整」，或直接按「AI 產生草稿」讓本機 AI 從逐字稿整理。"
                     )
-                    .font(.callout)
+                    .appFont(.callout)
                     .foregroundStyle(.secondary)
                 } else {
                     ForEach(model.events) { event in
@@ -580,12 +587,12 @@ public struct SessionDetailView: View {
                     Image(systemName: "bookmark.fill")
                         .foregroundStyle(style.tint)
                     Text(event.topic.isEmpty ? event.type : event.topic)
-                        .font(.callout.bold())
+                        .appFont(.callout, weight: .bold)
                         .lineLimit(1)
                     Spacer()
                     if event.needsReview {
                         Text("需複查")
-                            .font(.caption2)
+                            .appFont(.caption2)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
                             .background(.orange.opacity(0.22), in: Capsule())
@@ -593,25 +600,25 @@ public struct SessionDetailView: View {
                 }
                 HStack(spacing: 8) {
                     Text(event.type)
-                        .font(.caption)
+                        .appFont(.caption)
                         .foregroundStyle(.secondary)
                     Button {
                         model.player?.seek(to: event.startSeconds)
                     } label: {
                         Text(TimeFormatting.hms(event.startSeconds))
-                            .font(.caption.monospacedDigit())
+                            .appFont(.caption, monospacedDigit: true)
                     }
                     .buttonStyle(.plain)
                     .help("跳到 \(TimeFormatting.hms(event.startSeconds))")
                 }
                 if !event.content.isEmpty {
                     Text(event.content)
-                        .font(.caption)
+                        .appFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
                 Text("來源：\(event.sourceSegmentIDs.count) 段、\(event.sourceMarkerIDs.count) 標記")
-                    .font(.caption2)
+                    .appFont(.caption2)
                     .foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -630,10 +637,10 @@ public struct SessionDetailView: View {
     @ViewBuilder
     private var markersSection: some View {
         Text("事件標記")
-            .font(.headline)
+            .appFont(.headline)
         if model.markers.isEmpty {
             Text("這個 session 沒有標記。")
-                .font(.callout)
+                .appFont(.callout)
                 .foregroundStyle(.secondary)
         } else {
             ForEach(model.markers) { marker in
@@ -655,14 +662,14 @@ public struct SessionDetailView: View {
                 if editingTitle {
                     TextField("名稱", text: $titleDraft)
                         .textFieldStyle(.roundedBorder)
-                        .font(.title2.bold())
+                        .appFont(.title2, weight: .bold)
                         .focused($titleFieldFocused)
                         .frame(maxWidth: 360)
                         .onSubmit { commitRename() }
                         .onExitCommand { editingTitle = false }
                 } else {
                     Text(session.title)
-                        .font(.title2.bold())
+                        .appFont(.title2, weight: .bold)
                         .onTapGesture {
                             titleDraft = session.title
                             editingTitle = true
@@ -672,14 +679,14 @@ public struct SessionDetailView: View {
                 }
                 if session.source == .imported {
                     Text("匯入")
-                        .font(.caption)
+                        .appFont(.caption)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(.quaternary, in: Capsule())
                 }
                 if session.recovered {
                     Text("已恢復")
-                        .font(.caption)
+                        .appFont(.caption)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(.quaternary, in: Capsule())
@@ -688,7 +695,7 @@ public struct SessionDetailView: View {
                 displayModeToggle
             }
             Text("\(session.locale)　分段：\(model.segments.count)　標記：\(model.markers.count)")
-                .font(.callout)
+                .appFont(.callout)
                 .foregroundStyle(.secondary)
         }
         .padding(12)
@@ -712,7 +719,7 @@ public struct SessionDetailView: View {
                 transcriptMode == DisplaySettings.lyricsMode ? "歌詞模式" : "列表模式",
                 systemImage: transcriptMode == DisplaySettings.lyricsMode
                     ? "music.note.list" : "list.bullet")
-            .font(.callout)
+            .appFont(.callout)
         }
         .buttonStyle(.borderless)
         .help("切換逐字稿顯示方式（歌詞模式與列表模式循環）")
@@ -729,7 +736,7 @@ public struct SessionDetailView: View {
                     player.togglePlay()
                 } label: {
                     Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.title3)
+                        .appFont(.title3)
                 }
                 .buttonStyle(.borderless)
                 .help(player.isPlaying ? "暫停" : "播放")
@@ -740,26 +747,26 @@ public struct SessionDetailView: View {
                         Self.playbackRates[(index + 1) % Self.playbackRates.count]
                 } label: {
                     Text(String(format: "%g×", player.playbackRate))
-                        .font(.callout.monospacedDigit())
+                        .appFont(.callout, monospacedDigit: true)
                         .frame(minWidth: 40)
                 }
                 .buttonStyle(.borderless)
                 .help("播放倍速（點擊循環切換）")
                 Text(TimeFormatting.hms(player.currentSeconds))
-                    .font(.caption.monospacedDigit())
+                    .appFont(.caption, monospacedDigit: true)
                 Slider(
                     value: Binding(
                         get: { player.currentSeconds },
                         set: { player.seek(to: $0) }),
                     in: 0...max(player.totalSeconds, 0.01))
                 Text(TimeFormatting.hms(player.totalSeconds))
-                    .font(.caption.monospacedDigit())
+                    .appFont(.caption, monospacedDigit: true)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
         } else {
             Text("此 session 沒有可播放的音訊。")
-                .font(.callout)
+                .appFont(.callout)
                 .foregroundStyle(.secondary)
                 .padding(8)
         }
@@ -833,7 +840,7 @@ struct LyricsTranscriptView: View {
         return VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 Text(TimeFormatting.hms(segment.startSeconds))
-                    .font(.caption2.monospacedDigit())
+                    .appFont(.caption2, monospacedDigit: true)
                     .foregroundStyle(.tertiary)
                     .contentShape(Rectangle())
                     .onTapGesture {
@@ -910,7 +917,7 @@ struct PlainTranscriptView: View {
                         "\(TimeFormatting.hms(segment.startSeconds)) - "
                             + TimeFormatting.hms(segment.endSeconds)
                     )
-                    .font(.caption.monospacedDigit())
+                    .appFont(.caption, monospacedDigit: true)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
@@ -973,7 +980,7 @@ struct EventEditSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("編輯事件").font(.headline)
+                Text("編輯事件").appFont(.headline)
                 Spacer()
             }
             .padding()
