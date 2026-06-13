@@ -161,6 +161,24 @@ struct TranscriptionCoordinatorTests {
         #expect(persisted[0].text == "我們用BERT跑這個資料集。")
     }
 
+    @Test("名詞表第二層：coordinator 由 to 值去重推導 contextual strings 並於 start 傳給引擎")
+    func passesContextualStringsFromLexicon() async throws {
+        let store = try await makeStore()
+        let engine = MockTranscriptionEngine(script: [])
+        let coordinator = TranscriptionCoordinator(
+            engine: engine, store: store,
+            lexicon: [
+                LexiconRule(from: "博特", to: "BERT"),
+                LexiconRule(from: "刪除詞", to: ""),  // 空 to 不列入提示
+                LexiconRule(from: "資料急", to: "BERT"),  // 重複 to 去重
+                LexiconRule(from: "資料急2", to: "資料集"),
+            ])
+        try await coordinator.start(sessionID: "s1", locale: Locale(identifier: "zh-TW"))
+        await coordinator.finish()
+        let received = await engine.receivedContextualStrings
+        #expect(received == ["BERT", "資料集"])
+    }
+
     @Test("引擎失敗後 feed 不拋錯、狀態標記失敗、已定稿資料保留（ASR 失敗錄音不中斷）")
     func engineFailureIsContained() async throws {
         let store = try await makeStore()

@@ -32,11 +32,17 @@ public actor LegacySFSpeechEngine: TranscriptionEngine {
     /// 目前 request 的媒體時間起點：引擎回報的 timestamp 相對於 request 開頭。
     private var requestStartSeconds = 0.0
     private var lastFedEndSeconds = 0.0
+    private var contextualStrings: [String] = []
     private var finished = false
     private var finalizedContinuation: AsyncStream<TranscriptSegment>.Continuation?
     private var volatileContinuation: AsyncStream<VolatileUpdate>.Continuation?
 
     public init() {}
+
+    /// 詞彙提示（v0.2 名詞表第二層）；每次重啟 request 時重新套用。
+    public func setContextualStrings(_ strings: [String]) {
+        contextualStrings = strings
+    }
 
     public func availability(for locale: Locale) async -> EngineAvailability {
         guard let recognizer = SFSpeechRecognizer(locale: locale),
@@ -102,6 +108,9 @@ public actor LegacySFSpeechEngine: TranscriptionEngine {
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
         request.requiresOnDeviceRecognition = true
+        // 詞彙提示：偏向辨識名詞表術語，即使不在系統詞庫。
+        // 來源：developer.apple.com/documentation/speech/sfspeechrecognitionrequest/contextualstrings
+        request.contextualStrings = contextualStrings
         self.request = request
         task = recognizer.recognitionTask(with: request) { [weak self] result, _ in
             guard let self, let result else { return }

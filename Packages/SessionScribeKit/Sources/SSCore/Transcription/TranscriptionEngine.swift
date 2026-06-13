@@ -62,4 +62,11 @@ public protocol TranscriptionEngine: Sendable {
     func finish() async throws
     func finalizedSegments() async -> AsyncStream<TranscriptSegment>
     func volatileUpdates() async -> AsyncStream<VolatileUpdate>
+    /// 詞彙提示（v0.2 名詞表第二層）：在 start 前傳入要偏向辨識的術語。
+    /// 不支援的引擎用預設 no-op。
+    func setContextualStrings(_ strings: [String]) async
+}
+
+extension TranscriptionEngine {
+    public func setContextualStrings(_ strings: [String]) async {}
 }

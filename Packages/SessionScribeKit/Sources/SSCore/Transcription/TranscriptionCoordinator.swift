@@ -8,6 +8,9 @@ public actor TranscriptionCoordinator {
     private let store: SessionStore?
     /// 名詞表校正規則（v0.2）：在 finalized 落盤前與 volatile 轉發前套用。
     private let lexicon: [LexiconRule]
+    /// 詞彙提示（v0.2 名詞表第二層）：取名詞表的校正目標（to）去重，
+    /// start 前餵給引擎偏向辨識，從源頭緩解中英術語辨識劣化。
+    private let contextualStrings: [String]
     public private(set) var failed = false
     public private(set) var lastError: (any Error)?
 
@@ -23,6 +26,12 @@ public actor TranscriptionCoordinator {
         self.engine = engine
         self.store = store
         self.lexicon = lexicon
+        var seen = Set<String>()
+        self.contextualStrings = lexicon.compactMap { rule in
+            let term = rule.to.trimmingCharacters(in: .whitespaces)
+            guard !term.isEmpty, seen.insert(term).inserted else { return nil }
+            return term
+        }
     }
 
     public nonisolated var engineInfo: EngineInfo { engine.info }
@@ -39,6 +48,9 @@ public actor TranscriptionCoordinator {
     public func start(sessionID: String, locale: Locale) async throws {
         let finalized = await engine.finalizedSegments()
         let volatiles = await engine.volatileUpdates()
+        if !contextualStrings.isEmpty {
+            await engine.setContextualStrings(contextualStrings)
+        }
         try await engine.start(sessionID: sessionID, locale: locale)
         pumpTasks.append(
             Task {
