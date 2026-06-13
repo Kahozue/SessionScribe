@@ -27,6 +27,7 @@ public struct TranscriptListView: View {
                     SegmentRowView(
                         segment: segment,
                         inlineMarkers: model.inlineMarkers(for: segment),
+                        markerTemplate: model.activeTemplate,
                         fontSize: fontSize
                     )
                     .tag(segment.segmentID)
@@ -61,6 +62,7 @@ public struct TranscriptListView: View {
 struct SegmentRowView: View {
     let segment: TranscriptSegment
     let inlineMarkers: [Marker]
+    let markerTemplate: SessionTemplate
     let fontSize: Double
 
     var body: some View {
@@ -76,7 +78,9 @@ struct SegmentRowView: View {
                 .padding(.vertical, 1)
                 .background(.quaternary, in: Capsule())
                 ForEach(inlineMarkers) { marker in
-                    MarkerChip(marker: marker)
+                    MarkerChip(
+                        marker: marker,
+                        style: MarkerVisualStyle.style(for: marker, template: markerTemplate))
                 }
             }
             Text(segment.text)
@@ -113,13 +117,25 @@ struct VolatileRowView: View {
 /// marker 的內嵌徽章：圖示加標籤文字，不單靠顏色。
 struct MarkerChip: View {
     let marker: Marker
+    let style: MarkerVisualStyle
+
+    init(marker: Marker) {
+        self.init(marker: marker, style: MarkerVisualStyle.style(for: marker, template: nil))
+    }
+
+    init(marker: Marker, style: MarkerVisualStyle) {
+        self.marker = marker
+        self.style = style
+    }
 
     var body: some View {
         Label(marker.label, systemImage: "bookmark.fill")
             .font(.caption2)
+            .foregroundStyle(style.tint)
             .padding(.horizontal, 6)
             .padding(.vertical, 1)
-            .background(.yellow.opacity(0.25), in: Capsule())
+            .background(style.background, in: Capsule())
+            .overlay(Capsule().stroke(style.border, lineWidth: 1))
             .help(
                 marker.note.isEmpty
                     ? "\(marker.label)（\(TimeFormatting.hms(marker.mediaSeconds))）"

@@ -20,5 +20,6 @@ let package = Package(
         .testTarget(name: "SSCoreTests", dependencies: ["SSCore"]),
         .testTarget(name: "SSAudioTests", dependencies: ["SSAudio"]),
         .testTarget(name: "SSTranscriptionTests", dependencies: ["SSTranscription", "SSAudio"]),
+        .testTarget(name: "SSUITests", dependencies: ["SSUI"]),
     ]
 )

@@ -120,6 +120,38 @@ struct SessionStoreTests {
         #expect(loaded == markers)
     }
 
+    @Test("marker 可重寫以取消標記，後續 append 仍寫入目前檔案")
+    func markersCanBeRewrittenForCancellation() async throws {
+        let root = try makeTempRoot()
+        let session = makeSession()
+        let store = try await SessionStore.create(session, in: root)
+        let markers = (1...3).map { index in
+            Marker(
+                markerID: String(format: "m_%04d", index),
+                sessionID: session.sessionID,
+                mediaSeconds: Double(index) * 10,
+                type: MarkerType.defaults[index - 1].rawValue,
+                label: MarkerType.defaults[index - 1].label,
+                createdAt: Date(timeIntervalSince1970: Double(index))
+            )
+        }
+
+        try await store.appendMarker(markers[0])
+        try await store.appendMarker(markers[1])
+        try await store.saveMarkers([markers[1]])
+        try await store.appendMarker(markers[2])
+
+        let loaded = try await store.loadMarkers()
+        #expect(loaded == [markers[1], markers[2]])
+
+        let markerLines = try String(
+            contentsOf: store.directory.appending(path: SessionFiles.manualMarkers),
+            encoding: .utf8
+        )
+        .split(separator: "\n")
+        #expect(markerLines.count == 2)
+    }
+
     @Test("segment 與 marker 寫入規格書指定的檔名，一筆一行")
     func writesToSpecFileNames() async throws {
         let root = try makeTempRoot()
