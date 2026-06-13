@@ -141,6 +141,75 @@ struct JSONExporterTests {
     }
 }
 
+private let fixtureEvent = StructuredEvent(
+    eventID: "evt_0001", sessionID: "2026-06-15_1000_a3f2",
+    startSeconds: 15, endSeconds: 25,
+    speaker: "口委A", speakerRole: "committee",
+    type: "question", topic: "研究方法",
+    content: "為什麼選這個資料集？",
+    responseSummary: "說明來源限制。",
+    actionItem: "補充代表性說明。",
+    priority: "high", confidence: "low",
+    needsReview: true,
+    sourceSegmentIDs: ["seg_0001", "seg_0002"],
+    sourceMarkerIDs: ["m_0001"],
+    tags: ["資料集", "方法"],
+    createdAt: Date(timeIntervalSince1970: 0))
+
+@Suite("CSVExporter events.csv（v0.2）")
+struct EventsCSVTests {
+
+    @Test("events.csv 標頭與一列事件，陣列以分號串接、needs_review 為 true")
+    func eventsCSVLayout() {
+        let csv = CSVExporter.eventsCSV(events: [fixtureEvent])
+        let expected = """
+        event_id,time_start,time_end,speaker,speaker_role,type,topic,content,response_summary,action_item,priority,confidence,needs_review,source_segment_ids,source_marker_ids,tags
+        evt_0001,00:00:15,00:00:25,口委A,committee,question,研究方法,為什麼選這個資料集？,說明來源限制。,補充代表性說明。,high,low,true,seg_0001;seg_0002,m_0001,資料集;方法
+
+        """
+        #expect(csv == expected)
+    }
+
+    @Test("含逗號的欄位以雙引號跳脫")
+    func escapesCommaField() {
+        var event = fixtureEvent
+        event.content = "原因一,原因二"
+        let csv = CSVExporter.eventsCSV(events: [event])
+        #expect(csv.contains(#""原因一,原因二""#))
+    }
+}
+
+@Suite("MarkdownExporter structured_notes（v0.2）")
+struct StructuredNotesTests {
+
+    @Test("論文口試版含口試紀錄標題、基本資訊與需複查標記")
+    func thesisLayout() {
+        let md = MarkdownExporter.structuredNotes(session: fixtureSession, events: [fixtureEvent])
+        #expect(md.contains("# 口試紀錄"))
+        #expect(md.contains("## 基本資訊"))
+        #expect(md.contains("- 模板：論文口試"))
+        #expect(md.contains("研究方法"))
+        #expect(md.contains("為什麼選這個資料集？"))
+        #expect(md.contains("（需複查）"))
+        #expect(md.contains("seg_0001"))
+    }
+
+    @Test("非論文口試模板用通用標題與模板名稱")
+    func genericLayout() {
+        var meeting = fixtureSession
+        meeting.templateID = "meeting"
+        let md = MarkdownExporter.structuredNotes(session: meeting, events: [fixtureEvent])
+        #expect(md.contains("（結構化筆記）"))
+        #expect(md.contains("- 模板：會議"))
+    }
+
+    @Test("無事件時輸出占位文字")
+    func emptyEvents() {
+        let md = MarkdownExporter.structuredNotes(session: fixtureSession, events: [])
+        #expect(md.contains("（尚無結構化事件）"))
+    }
+}
+
 @Suite("ExportService")
 struct ExportServiceTests {
 
@@ -174,5 +243,47 @@ struct ExportServiceTests {
             markdown
                 == MarkdownExporter.transcript(
                     session: fixtureSession, segments: fixtureSegments, markers: fixtureMarkers))
+    }
+
+    @Test("有 events.json 時匯出 events.json、events.csv、structured_notes.md 用既有事件")
+    func exportsEventFilesFromSavedEvents() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appending(path: "SSCoreTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let store = try await SessionStore.create(fixtureSession, in: root)
+        try EventsFile.write(EventsDocument(events: [fixtureEvent]), to: store.directory)
+
+        let destination = root.appending(path: "out")
+        try await ExportService.export(
+            store: store, session: fixtureSession, to: destination,
+            formats: [.events, .eventsCSV, .structuredNotes])
+
+        let fm = FileManager.default
+        for name in ["events.json", "events.csv", "structured_notes.md"] {
+            #expect(fm.fileExists(atPath: destination.appending(path: name).path), "缺 \(name)")
+        }
+        let csv = try String(
+            contentsOf: destination.appending(path: "events.csv"), encoding: .utf8)
+        #expect(csv == CSVExporter.eventsCSV(events: [fixtureEvent]))
+    }
+
+    @Test("無 events.json 時由 markers 即時生成事件草稿匯出")
+    func exportsEventFilesBuiltFromMarkers() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appending(path: "SSCoreTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let store = try await SessionStore.create(fixtureSession, in: root)
+        for segment in fixtureSegments { try await store.appendSegment(segment) }
+        for marker in fixtureMarkers { try await store.appendMarker(marker) }
+
+        let destination = root.appending(path: "out")
+        try await ExportService.export(
+            store: store, session: fixtureSession, to: destination, formats: [.eventsCSV])
+
+        let csv = try String(
+            contentsOf: destination.appending(path: "events.csv"), encoding: .utf8)
+        // 一個 marker 生成一筆草稿。
+        #expect(csv.contains("evt_0001"))
+        #expect(csv.contains("question"))
     }
 }
