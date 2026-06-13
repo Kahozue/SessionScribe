@@ -13,11 +13,13 @@ final class SessionDetailViewModel {
     private(set) var session: Session?
     private(set) var segments: [TranscriptSegment] = []
     private(set) var markers: [Marker] = []
+    private(set) var summary: TranscriptSummary?
     private(set) var events: [StructuredEvent] = []
     private(set) var player: SessionPlayer?
     var errorMessage: String?
     private(set) var transcribing = false
     private(set) var transcribeProgress = 0.0
+    private(set) var summarizing = false
     private(set) var organizing = false
     private(set) var organizeProgress = 0.0
 
@@ -34,6 +36,7 @@ final class SessionDetailViewModel {
             session = try await store.loadMetadata()
             segments = try await store.loadSegments()
             markers = try await store.loadMarkers()
+            summary = (try TranscriptSummaryFile.readIfPresent(from: directory))?.summary
             events = (try EventsFile.readIfPresent(from: directory))?.events ?? []
             player = try? SessionPlayerCache.shared.player(
                 for: directory.appending(path: SessionFiles.audioDirectory))
@@ -77,6 +80,16 @@ final class SessionDetailViewModel {
         }
     }
 
+    private func persistSummary() {
+        guard let summary else { return }
+        do {
+            try TranscriptSummaryFile.write(
+                TranscriptSummaryDocument(summary: summary), to: directory)
+        } catch {
+            errorMessage = "儲存摘要失敗：\(error.localizedDescription)"
+        }
+    }
+
     func removeMarker(_ markerID: String) {
         let updatedMarkers = markers.filter { $0.markerID != markerID }
         guard updatedMarkers.count != markers.count else { return }
@@ -102,6 +115,29 @@ final class SessionDetailViewModel {
     /// 本機模型不可用時的原因（裝置不符、未開 Apple Intelligence、模型未就緒）；可用為 nil。
     var organizeAvailabilityMessage: String? {
         EventOrganizer.availabilityMessage()
+    }
+
+    var summaryAvailabilityMessage: String? {
+        TranscriptSummarizer.availabilityMessage()
+    }
+
+    /// 對整份 finalized 逐字稿產生摘要；輸出為 transcript_summary.json。
+    func generateSummaryWithAI() {
+        guard let session, !segments.isEmpty, !summarizing else { return }
+        summarizing = true
+        let segs = segments
+        let sessionID = session.sessionID
+        let locale = Locale(identifier: session.locale)
+        Task {
+            defer { summarizing = false }
+            do {
+                summary = try await TranscriptSummarizer.generateSummary(
+                    from: segs, sessionID: sessionID, locale: locale)
+                persistSummary()
+            } catch {
+                errorMessage = "AI 產生摘要失敗：\(error.localizedDescription)"
+            }
+        }
     }
 
     /// 魔杖入口：已有草稿就整理（補語意欄位），沒有草稿就直接從逐字稿生成。
@@ -159,6 +195,10 @@ final class SessionDetailViewModel {
     /// 魔杖可按的條件：模型可用，且有逐字稿可生成或已有草稿可整理。
     var canRunAI: Bool {
         organizeAvailabilityMessage == nil && (!segments.isEmpty || !events.isEmpty)
+    }
+
+    var canGenerateSummary: Bool {
+        summaryAvailabilityMessage == nil && !segments.isEmpty
     }
 
     /// 點標題改名：metadata 即時落盤。
@@ -232,6 +272,7 @@ public struct SessionDetailView: View {
     @State private var editingTitle = false
     @State private var titleDraft = ""
     @State private var editingEvent: StructuredEvent?
+    @State private var summaryExpanded = true
     @State private var eventsExpanded = true
     @FocusState private var titleFieldFocused: Bool
     @AppStorage(DisplaySettings.transcriptModeKey)
@@ -314,10 +355,12 @@ public struct SessionDetailView: View {
         }
     }
 
-    /// 檢視頁右欄：結構化事件草稿與事件標記；點時間跳轉播放、點事件卡編輯。
+    /// 檢視頁右欄：整份摘要、結構化事件草稿與事件標記；點時間跳轉播放、點事件卡編輯。
     private var detailInspector: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                summarySection
+                Divider()
                 structuredEventsSection
                 Divider()
                 markersSection
@@ -329,6 +372,121 @@ public struct SessionDetailView: View {
         .sheet(item: $editingEvent) { event in
             EventEditSheet(event: event) { model.updateEvent($0) }
         }
+    }
+
+    private var summarySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { summaryExpanded.toggle() }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: summaryExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption)
+                    Text("逐字稿摘要")
+                        .font(.headline)
+                    Spacer()
+                    if model.summary?.needsReview == true {
+                        Text("需複查")
+                            .font(.caption2)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(.orange.opacity(0.22), in: Capsule())
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .help(summaryExpanded ? "收合" : "展開")
+
+            Button {
+                model.generateSummaryWithAI()
+            } label: {
+                Label(
+                    model.summary == nil ? "AI 產生摘要" : "重新產生摘要",
+                    systemImage: "wand.and.stars"
+                )
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(model.summarizing || !model.canGenerateSummary)
+            .help(model.summaryAvailabilityMessage ?? "用本機 AI 產生整份逐字稿摘要")
+
+            if model.summarizing {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("AI 產生摘要中…").font(.caption).foregroundStyle(.secondary)
+                }
+            } else if let message = model.summaryAvailabilityMessage, !model.segments.isEmpty {
+                Text(message).font(.caption).foregroundStyle(.secondary)
+            }
+
+            if summaryExpanded {
+                if let summary = model.summary {
+                    summaryCard(summary)
+                } else {
+                    Text(
+                        model.segments.isEmpty
+                            ? "這個 session 還沒有逐字稿。先轉錄，再產生摘要。"
+                            : "尚未產生摘要。"
+                    )
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func summaryCard(_ summary: TranscriptSummary) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if summary.content.isEmpty {
+                Text("摘要內容空白，請重新產生。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(summary.content)
+                    .font(.callout)
+                    .textSelection(.enabled)
+            }
+
+            if !summary.keyPoints.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("重點")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                    ForEach(summary.keyPoints, id: \.self) { point in
+                        Text("• \(point)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+
+            if !summary.actionItems.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("待辦")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                    ForEach(summary.actionItems, id: \.self) { item in
+                        Text("• \(item)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+
+            Text("來源：\(summary.sourceSegmentIDs.count) 段逐字稿")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(.quaternary, lineWidth: 1)
+        )
     }
 
     private var structuredEventsSection: some View {

@@ -1,13 +1,12 @@
 # SessionScribe 測試方法
 
-版本：自 M2 起累積（2026-06-12 建立，2026-06-13 補 M3 至 M7）
+版本：自 M2 起累積（2026-06-12 建立，2026-06-13 補 M3 至 M7、v0.2 回歸與 v0.3 摘要）
 對應規格：`docs/SPEC.md` 第十三節
 
 ## 一、單元測試
 
 ```bash
-cd Packages/SessionScribeKit
-swift test
+swift test --package-path Packages/SessionScribeKit
 ```
 
 涵蓋範圍（全部離開 Xcode GUI 可執行，無需麥克風權限）：
@@ -17,6 +16,7 @@ swift test
 | Session、TranscriptSegment、Marker、AudioManifest 模型 | 規格書第八節 schema 的編解碼與範例相容性 |
 | JSONLWriter、JSONLReader | append 即落盤、截斷尾行容忍、中段損毀拋錯 |
 | SessionStore | 資料夾結構、metadata 原子寫入、segment 與 marker 落盤 |
+| SessionStore.saveMarkers | 取消 marker 時原子重寫 manual_markers.jsonl、重開 append writer |
 | SessionLibrary | 列表排序、損毀項目略過、崩潰恢復掃描冪等性 |
 | MediaClock | 累計 frame 計時、pause 凍結、並行 advance 不漏計 |
 | SessionController | 狀態機合法轉換、防睡眠生命週期、管線失敗時的 metadata 語義 |
@@ -27,6 +27,7 @@ swift test
 
 | MarkerSegmentAssociation、MarkerService | 時間窗關聯、依序編號、快照、即時落盤 |
 | MarkdownExporter、CSVExporter、JSONExporter、ExportService | 輸出格式精確比對、RFC 4180 跳脫、子集匯出 |
+| AudioExporter | CAF chunks 依 manifest 串接轉 m4a |
 | MockTranscriptionEngine | 腳本驅動 finalize、漸進 volatile、錯誤注入 |
 | TranscriptionCoordinator | 引擎失敗隔離（ASR 失敗錄音不中斷）、先落盤再轉發 |
 | EngineSelector | 降級鏈挑選、prepare 失敗降級、全不可用回 nil |
@@ -36,7 +37,11 @@ swift test
 | OfflineTranscriber | 跨 chunk 媒體時間連續、segments 落盤 |
 | AudioManifest.locate | 跨塊定位、邊界歸屬、超界 nil |
 | LibraryConfig、SessionLibrary 批次 | 分類 round-trip、批次指派與刪除 |
+| LibraryConfig marker types、lexicon | 舊檔相容、自訂標記與名詞表 round-trip |
 | TranscriptSearchService | 跨 session 命中、marker note、大小寫、空查詢 |
+| EventDraftBuilder、EventOrganizer | 依 marker 生成草稿、無 marker 時 AI 從 segments 生成 events、整理後保留來源欄位並強制 needs_review |
+| TranscriptSummary、TranscriptSummarizer | transcript_summary.json、整份 finalized 逐字稿來源追溯、needs_review |
+| MarkerVisualStyle、MarkerTimeline | Cmd+1 至 4 色票、模板 slot 取色、事件整理後 inline marker 保留 |
 
 音訊測試使用合成 buffer（固定值與正弦波），不經過麥克風；寫出的 CAF 以
 `AVAudioFile` 讀回驗證 frame 數與樣本值。
@@ -77,7 +82,7 @@ swift test
 8. **分類與批次**：建立分類、把數個 session 多選移入、隱藏分類後側欄消失、
    批次刪除有確認且可從垃圾桶復原。
 
-## 四、v0.2 實機驗證清單（手動）
+## 四、v0.2 實機驗證清單（手動，已通過）
 
 1. **模板選擇**：工具列錄音選項選「會議」模板後錄音，右欄四鍵應顯示決議／待辦／重要／問題，Cmd+1 至 4 建立對應 type 的 marker；停止後在 Finder 開 metadata.json 確認 `template_id` 為 `meeting`。切回論文口試應恢復 Q/R/S/A 字母提示。
 2. **名詞表校正**：設定頁「轉寫」加規則（例：博特→BERT），下一場（或重新轉寫）含該詞的句子落盤後應已校正；開 live_segments.jsonl 確認。空規則表行為與先前一致。
@@ -85,8 +90,10 @@ swift test
 4. **結構化事件草稿**：對有標記的 session 在檢視頁右欄按「產生草稿」，事件卡顯示需複查徽章、點時間跳轉、點卡開編輯表單；改一個欄位儲存後重開頁面應保留，且來源段落／標記欄位不可改。
 5. **新匯出格式**：匯出時勾選結構化筆記、events.json、events.csv 與 m4a，確認四檔產出；events.json 與檢視頁編輯結果一致，m4a 在 QuickTime 可播且長度與原錄音相符。
 6. **本機 AI 整理事件**：檢視頁右欄有「依標記彙整」與「AI 產生草稿／AI 整理」兩顆按鈕。沒有標記、只有逐字稿時，AI 鈕仍可直接從逐字稿生成草稿（與標記解耦）；已有草稿時 AI 鈕改為補齊欄位。若本機 Apple Intelligence 未開或不支援該語言，AI 鈕停用並顯示原因（機械路徑仍可用）。AI 產物：型別／主題／摘要／待辦被填上、強制 needs_review，content 取原始逐字稿、來源段落以時間回推不杜撰。事件區塊標題可點 chevron 摺疊。
+7. **標記色票與取消回歸**：Cmd+1 至 4 建立的標記在中欄 inline marker、右欄事件列表、結構化事件來源標記中維持藍／紅／綠／紫色票。按「依標記彙整」或「AI 產生草稿／AI 整理」後，中欄原本標記過的位置仍顯示 inline marker。右欄事件列表點書籤圖示可取消該 marker，取消後中欄與右欄同步移除，重開 session 後仍不再出現。
 
-## 五、長時測試（現場前）
+## 五、v0.3 實機驗證清單（手動）
 
-兩小時級錄音留待口試前驗證：磁碟用量約 350MB 一小時、記憶體無顯著成長、
-chunk 輪替每五分鐘一次無爆音斷點。
+1. **整份逐字稿摘要**：有 finalized 逐字稿的 session 進入檢視頁，右欄最上方顯示「逐字稿摘要」，下方依序是「結構化事件」與「事件標記」。按「AI 產生摘要」後產生摘要、重點、待辦與需複查標記；重開 session 後摘要仍在。摘要區 chevron 可折疊且不影響事件與標記區。
+2. **摘要可用性**：沒有逐字稿時摘要按鈕停用；本機 Apple Intelligence 未開或模型未就緒時，按鈕停用並顯示原因。
+3. **兩小時級長錄**：磁碟用量約 350MB 一小時、記憶體無顯著成長、chunk 輪替每五分鐘一次無爆音斷點。
