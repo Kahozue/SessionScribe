@@ -42,4 +42,16 @@ struct DisplaySettingsTests {
 
         #expect(!SummaryBadgePolicy.showsReviewBadge(for: summary))
     }
+
+    @Test("右欄卡片內文使用一致可讀字級")
+    func inspectorCardsUseConsistentReadableBodyStyles() {
+        #expect(InspectorCardTypography.summaryBody == .callout)
+        #expect(InspectorCardTypography.summarySubheading == .callout)
+        #expect(InspectorCardTypography.summaryListItem == .callout)
+        #expect(InspectorCardTypography.summarySource == .callout)
+
+        #expect(InspectorCardTypography.eventMetadata == .callout)
+        #expect(InspectorCardTypography.eventContent == .callout)
+        #expect(InspectorCardTypography.eventSource == .callout)
+    }
 }
