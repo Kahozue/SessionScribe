@@ -727,6 +727,7 @@ public struct SessionDetailView: View {
                         .padding(.vertical, 2)
                         .background(.quaternary, in: Capsule())
                 }
+                PrivacyModeBadge(mode: session.privacyMode)
                 Spacer()
                 displayModeToggle
             }
