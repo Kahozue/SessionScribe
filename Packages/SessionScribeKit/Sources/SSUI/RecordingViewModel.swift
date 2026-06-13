@@ -275,6 +275,22 @@ public final class RecordingViewModel {
         }
     }
 
+    // MARK: - 名詞表校正（v0.2）
+
+    /// 新增校正規則（from→to）；空白 from 略過。規則於下一場轉寫生效。
+    public func addLexiconRule(from: String, to: String) {
+        let trimmedFrom = from.trimmingCharacters(in: .whitespaces)
+        let trimmedTo = to.trimmingCharacters(in: .whitespaces)
+        guard !trimmedFrom.isEmpty else { return }
+        libraryConfig.lexicon.append(LexiconRule(from: trimmedFrom, to: trimmedTo))
+        persistConfig()
+    }
+
+    public func removeLexiconRules(atOffsets offsets: IndexSet) {
+        libraryConfig.lexicon.remove(atOffsets: offsets)
+        persistConfig()
+    }
+
     // MARK: - 跨逐字稿搜尋（規格 1.1 第 9 項）
 
     public func search(_ query: String) -> [SearchHit] {
@@ -320,7 +336,8 @@ public final class RecordingViewModel {
                     from: EngineSelector.defaultChain(useMock: useMock),
                     locale: Locale(identifier: session.locale))
             {
-                let coordinator = TranscriptionCoordinator(engine: engine, store: store)
+                let coordinator = TranscriptionCoordinator(
+                    engine: engine, store: store, lexicon: libraryConfig.lexicon)
                 self.coordinator = coordinator
                 await pipeline.attachTranscription(coordinator)
                 session.asrEngine = engine.info.name
@@ -538,7 +555,8 @@ public final class RecordingViewModel {
                 errorMessage = "沒有可用的轉寫引擎。"
                 return
             }
-            let coordinator = TranscriptionCoordinator(engine: engine, store: store)
+            let coordinator = TranscriptionCoordinator(
+                engine: engine, store: store, lexicon: libraryConfig.lexicon)
             do {
                 try await OfflineTranscriber.transcribe(
                     sessionDirectory: store.directory, session: session,

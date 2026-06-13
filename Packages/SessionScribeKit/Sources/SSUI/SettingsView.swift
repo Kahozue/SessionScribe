@@ -1,9 +1,14 @@
+import SSCore
 import SwiftUI
 
 /// App 設定視窗（Cmd+,）。字級與外觀自工具列移入此處；
-/// v0.2 起的設定（模板、自訂標記、名詞表、雲端 opt-in）都收在這裡。
+/// v0.2 起的設定（名詞表、自訂標記等）都收在這裡，與主視窗共用 model。
 public struct SettingsView: View {
-    public init() {}
+    let model: RecordingViewModel
+
+    public init(model: RecordingViewModel) {
+        self.model = model
+    }
 
     public var body: some View {
         TabView {
@@ -11,12 +16,12 @@ public struct SettingsView: View {
                 .tabItem {
                     Label("顯示", systemImage: "textformat.size")
                 }
-            TranscriptionSettingsTab()
+            TranscriptionSettingsTab(model: model)
                 .tabItem {
                     Label("轉寫", systemImage: "waveform.badge.mic")
                 }
         }
-        .frame(width: 440)
+        .frame(width: 460)
         .padding(.bottom, 8)
     }
 }
@@ -62,8 +67,15 @@ private struct DisplaySettingsTab: View {
 }
 
 private struct TranscriptionSettingsTab: View {
+    @Bindable var model: RecordingViewModel
     @AppStorage(DisplaySettings.useMockEngineKey)
     private var useMockEngine = false
+    @State private var newFrom = ""
+    @State private var newTo = ""
+
+    private var canAdd: Bool {
+        !newFrom.trimmingCharacters(in: .whitespaces).isEmpty
+    }
 
     var body: some View {
         Form {
@@ -73,10 +85,41 @@ private struct TranscriptionSettingsTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Section("即將推出（v0.2）") {
-                Text("場景模板、自訂標記類型、專有名詞校正表、匯出 m4a 轉檔將在此設定。")
-                    .font(.callout)
+            Section("專有名詞校正表") {
+                Text("轉寫產生時做全文字面替換，下一場轉寫生效。中英夾雜術語可在此校正，校正為留空表示刪除該詞。")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
+                if model.libraryConfig.lexicon.isEmpty {
+                    Text("尚無規則。")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(model.libraryConfig.lexicon) { rule in
+                        HStack(spacing: 8) {
+                            Text(rule.from)
+                            Image(systemName: "arrow.right")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(rule.to.isEmpty ? "（刪除）" : rule.to)
+                                .foregroundStyle(rule.to.isEmpty ? .secondary : .primary)
+                            Spacer()
+                        }
+                    }
+                    .onDelete { model.removeLexiconRules(atOffsets: $0) }
+                }
+                HStack(spacing: 8) {
+                    TextField("原詞", text: $newFrom)
+                    Image(systemName: "arrow.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("校正為", text: $newTo)
+                    Button("新增") {
+                        model.addLexiconRule(from: newFrom, to: newTo)
+                        newFrom = ""
+                        newTo = ""
+                    }
+                    .disabled(!canAdd)
+                }
             }
         }
         .formStyle(.grouped)

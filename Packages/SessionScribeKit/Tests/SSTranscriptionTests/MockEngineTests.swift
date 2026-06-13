@@ -133,6 +133,34 @@ struct TranscriptionCoordinatorTests {
         #expect(persisted == forwarded)
     }
 
+    @Test("名詞表規則套用於 finalized：落盤與轉發的文字都已校正")
+    func appliesLexiconToFinalized() async throws {
+        let store = try await makeStore()
+        let engine = MockTranscriptionEngine(script: [
+            MockUtterance(text: "我們用博特跑這個資料急。", startSeconds: 1, endSeconds: 4)
+        ])
+        let coordinator = TranscriptionCoordinator(
+            engine: engine, store: store,
+            lexicon: [
+                LexiconRule(from: "博特", to: "BERT"),
+                LexiconRule(from: "資料急", to: "資料集"),
+            ])
+        let updates = await coordinator.finalizedUpdates()
+        try await coordinator.start(sessionID: "s1", locale: Locale(identifier: "zh-TW"))
+
+        await coordinator.feed(slice(at: 4.5))
+        await coordinator.finish()
+
+        var forwarded: [TranscriptSegment] = []
+        for await segment in updates {
+            forwarded.append(segment)
+        }
+        #expect(forwarded.count == 1)
+        #expect(forwarded[0].text == "我們用BERT跑這個資料集。")
+        let persisted = try await store.loadSegments()
+        #expect(persisted[0].text == "我們用BERT跑這個資料集。")
+    }
+
     @Test("引擎失敗後 feed 不拋錯、狀態標記失敗、已定稿資料保留（ASR 失敗錄音不中斷）")
     func engineFailureIsContained() async throws {
         let store = try await makeStore()

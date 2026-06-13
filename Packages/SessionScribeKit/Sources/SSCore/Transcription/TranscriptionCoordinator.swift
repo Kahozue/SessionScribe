@@ -6,6 +6,8 @@ public actor TranscriptionCoordinator {
 
     private let engine: any TranscriptionEngine
     private let store: SessionStore?
+    /// 名詞表校正規則（v0.2）：在 finalized 落盤前與 volatile 轉發前套用。
+    private let lexicon: [LexiconRule]
     public private(set) var failed = false
     public private(set) var lastError: (any Error)?
 
@@ -13,9 +15,14 @@ public actor TranscriptionCoordinator {
     private var volatileOut: AsyncStream<VolatileUpdate>.Continuation?
     private var pumpTasks: [Task<Void, Never>] = []
 
-    public init(engine: any TranscriptionEngine, store: SessionStore?) {
+    public init(
+        engine: any TranscriptionEngine,
+        store: SessionStore?,
+        lexicon: [LexiconRule] = []
+    ) {
         self.engine = engine
         self.store = store
+        self.lexicon = lexicon
     }
 
     public nonisolated var engineInfo: EngineInfo { engine.info }
@@ -76,7 +83,11 @@ public actor TranscriptionCoordinator {
 
     // MARK: - 私有
 
-    private func handleFinalized(_ segment: TranscriptSegment) async {
+    private func handleFinalized(_ rawSegment: TranscriptSegment) async {
+        var segment = rawSegment
+        if !lexicon.isEmpty {
+            segment.text = Lexicon.apply(segment.text, rules: lexicon)
+        }
         if let store {
             do {
                 try await store.appendSegment(segment)
@@ -91,7 +102,14 @@ public actor TranscriptionCoordinator {
     }
 
     private func forwardVolatile(_ update: VolatileUpdate) {
-        volatileOut?.yield(update)
+        guard !lexicon.isEmpty else {
+            volatileOut?.yield(update)
+            return
+        }
+        let corrected = VolatileUpdate(
+            text: Lexicon.apply(update.text, rules: lexicon),
+            startSeconds: update.startSeconds)
+        volatileOut?.yield(corrected)
     }
 
     private func closeFinalized() {
