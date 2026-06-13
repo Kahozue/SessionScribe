@@ -15,19 +15,41 @@ public struct SessionCategory: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
-/// sessions 根目錄的 library.json：分類定義等程式庫層設定。
+/// sessions 根目錄的 library.json：分類定義、自訂標記類型、名詞表等程式庫層設定。
 public struct LibraryConfig: Codable, Equatable, Sendable {
     public var schemaVersion: Int
     public var categories: [SessionCategory]
+    /// 使用者自訂的 marker type（v0.2），附加在模板四鍵之後。
+    public var markerTypes: [MarkerType]
+    /// 專有名詞校正表（v0.2），轉寫產生階段套用。
+    public var lexicon: [LexiconRule]
 
-    public init(schemaVersion: Int = SchemaVersion.current, categories: [SessionCategory] = []) {
+    public init(
+        schemaVersion: Int = SchemaVersion.current,
+        categories: [SessionCategory] = [],
+        markerTypes: [MarkerType] = [],
+        lexicon: [LexiconRule] = []
+    ) {
         self.schemaVersion = schemaVersion
         self.categories = categories
+        self.markerTypes = markerTypes
+        self.lexicon = lexicon
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        categories = try container.decodeIfPresent([SessionCategory].self, forKey: .categories) ?? []
+        // v0.2 新欄位：舊檔缺欄位視為空，schema_version 不變。
+        markerTypes = try container.decodeIfPresent([MarkerType].self, forKey: .markerTypes) ?? []
+        lexicon = try container.decodeIfPresent([LexiconRule].self, forKey: .lexicon) ?? []
     }
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
         case categories
+        case markerTypes = "marker_types"
+        case lexicon
     }
 }
 
