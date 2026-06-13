@@ -93,7 +93,7 @@ public enum TranscriptSummarizer {
             createdAt: createdAt)
     }
 
-    private static let instructions = """
+    static let instructions = """
         你是論文口試、會議與訪談記錄的整理助手。根據完整逐字稿產生整份內容摘要。
         只整理逐字稿中出現的資訊，不得杜撰；不確定的待辦不要加入。
         全部欄位以繁體中文輸出，語氣中性、可供使用者後續編修。
