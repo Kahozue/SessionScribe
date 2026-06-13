@@ -18,6 +18,8 @@ final class SessionDetailViewModel {
     var errorMessage: String?
     private(set) var transcribing = false
     private(set) var transcribeProgress = 0.0
+    private(set) var organizing = false
+    private(set) var organizeProgress = 0.0
 
     let directory: URL
     private let store: SessionStore
@@ -60,6 +62,33 @@ final class SessionDetailViewModel {
             try EventsFile.write(EventsDocument(events: events), to: directory)
         } catch {
             errorMessage = "儲存事件草稿失敗：\(error.localizedDescription)"
+        }
+    }
+
+    /// 本機模型不可用時的原因（裝置不符、未開 Apple Intelligence、模型未就緒）；可用為 nil。
+    var organizeAvailabilityMessage: String? {
+        EventOrganizer.availabilityMessage()
+    }
+
+    /// 用本機 LLM 整理現有事件草稿的語意欄位；保留來源與 needs_review。
+    func organizeEvents() {
+        guard let session, !events.isEmpty, !organizing else { return }
+        organizing = true
+        organizeProgress = 0
+        let current = events
+        let locale = Locale(identifier: session.locale)
+        Task {
+            defer { organizing = false }
+            do {
+                let organized = try await EventOrganizer.organize(current, locale: locale) {
+                    progress in
+                    Task { @MainActor in self.organizeProgress = progress }
+                }
+                events = organized
+                persistEvents()
+            } catch {
+                errorMessage = "AI 整理失敗：\(error.localizedDescription)"
+            }
         }
     }
 
@@ -134,6 +163,7 @@ public struct SessionDetailView: View {
     @State private var editingTitle = false
     @State private var titleDraft = ""
     @State private var editingEvent: StructuredEvent?
+    @State private var eventsExpanded = true
     @FocusState private var titleFieldFocused: Bool
     @AppStorage(DisplaySettings.transcriptModeKey)
     private var transcriptMode = DisplaySettings.lyricsMode
@@ -230,31 +260,70 @@ public struct SessionDetailView: View {
 
     private var structuredEventsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("結構化事件")
-                    .font(.headline)
+            HStack(spacing: 6) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { eventsExpanded.toggle() }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: eventsExpanded ? "chevron.down" : "chevron.right")
+                            .font(.caption)
+                        Text(
+                            model.events.isEmpty
+                                ? "結構化事件" : "結構化事件（\(model.events.count)）"
+                        )
+                        .font(.headline)
+                    }
+                }
+                .buttonStyle(.plain)
+                .help(eventsExpanded ? "收合" : "展開")
                 Spacer()
+                // 機械草稿：依標記前後文彙整（保留原本做法）。
                 Button {
                     model.generateDrafts()
                 } label: {
-                    Label(model.events.isEmpty ? "產生草稿" : "重新產生", systemImage: "sparkles")
-                        .font(.callout)
+                    Image(systemName: "doc.badge.plus")
                 }
                 .buttonStyle(.borderless)
-                .disabled(model.markers.isEmpty)
-                .help(model.markers.isEmpty ? "沒有標記可生成事件" : "依標記前後文整理成事件草稿")
-            }
-            if model.events.isEmpty {
-                Text(
-                    model.markers.isEmpty
-                        ? "這個 session 沒有標記，無法生成事件草稿。"
-                        : "尚未產生事件草稿。點「產生草稿」依標記整理。"
+                .disabled(model.markers.isEmpty || model.organizing)
+                .help(model.markers.isEmpty ? "沒有標記可生成事件" : "依標記前後文產生／重新產生草稿")
+                // 本機 LLM 整理：補齊語意欄位，產物一律 needs_review。
+                Button {
+                    model.organizeEvents()
+                } label: {
+                    Image(systemName: "wand.and.stars")
+                }
+                .buttonStyle(.borderless)
+                .disabled(
+                    model.events.isEmpty || model.organizing
+                        || model.organizeAvailabilityMessage != nil
                 )
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            } else {
-                ForEach(model.events) { event in
-                    eventCard(event)
+                .help(model.organizeAvailabilityMessage ?? "用本機 AI 整理事件（型別、主題、摘要、待辦）")
+            }
+
+            if model.organizing {
+                ProgressView(value: model.organizeProgress) {
+                    Text("AI 整理中 \(Int(model.organizeProgress * 100))%")
+                        .font(.caption)
+                }
+            } else if let message = model.organizeAvailabilityMessage, !model.events.isEmpty {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if eventsExpanded {
+                if model.events.isEmpty {
+                    Text(
+                        model.markers.isEmpty
+                            ? "這個 session 沒有標記，無法生成事件草稿。"
+                            : "尚未產生事件草稿。點右上的文件圖示依標記整理，再用魔杖圖示讓本機 AI 補齊欄位。"
+                    )
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                } else {
+                    ForEach(model.events) { event in
+                        eventCard(event)
+                    }
                 }
             }
         }
