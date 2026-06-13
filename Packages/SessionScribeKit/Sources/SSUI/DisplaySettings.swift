@@ -64,6 +64,12 @@ public enum DisplaySettings {
     public static let defaultCaptionOpacity = 0.7
     public static let captionOpacityRange = 0.3...1.0
 
+    /// 辨識語言與即時翻譯（規格 1.2 Phase 3）。辨識語言同時決定 SpeechTranscriber
+    /// locale 與翻譯來源；翻譯目標可選，預設中文；翻譯預設關。
+    public static let recognitionLanguageKey = "recognitionLanguage"
+    public static let translationEnabledKey = "translationEnabled"
+    public static let translationTargetKey = "translationTarget"
+
     static func clampedCaptionFontSize(_ raw: Double) -> Double {
         min(max(raw, captionFontSizeRange.lowerBound), captionFontSizeRange.upperBound)
     }

@@ -64,4 +64,32 @@ struct CaptionLinesTests {
         #expect(lines.current == "第一句")
         #expect(lines.isVolatile == false)
     }
+
+    @Test("無 volatile：當前句與前一句各帶對應 segmentID 的譯文")
+    func translationsAttachedBySegmentID() {
+        let transcript = [
+            segment("seg_1", "第一句", start: 0),
+            segment("seg_2", "第二句", start: 1),
+        ]
+        let lines = CaptionLines.derive(
+            transcript: transcript, volatileText: nil,
+            translations: ["seg_1": "first", "seg_2": "second"])
+
+        #expect(lines.current == "第二句")
+        #expect(lines.currentTranslation == "second")
+        #expect(lines.previous == "第一句")
+        #expect(lines.previousTranslation == "first")
+    }
+
+    @Test("有 volatile：前一句帶譯文、當前句（volatile）無譯文")
+    func volatileHasNoTranslationButPreviousDoes() {
+        let transcript = [segment("seg_1", "第一句", start: 0)]
+        let lines = CaptionLines.derive(
+            transcript: transcript, volatileText: "正在說的",
+            translations: ["seg_1": "first"])
+
+        #expect(lines.current == "正在說的")
+        #expect(lines.currentTranslation == nil)
+        #expect(lines.previousTranslation == "first")
+    }
 }

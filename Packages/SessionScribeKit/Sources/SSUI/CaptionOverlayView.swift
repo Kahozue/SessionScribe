@@ -33,20 +33,16 @@ public struct CaptionOverlayView: View {
     }
 
     private func captionBar(_ lines: CaptionLines) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
             if let previous = lines.previous {
-                Text(previous)
-                    .font(.system(size: captionFontSize * 0.7, weight: .regular))
-                    .foregroundStyle(.white.opacity(0.55))
-                    .lineLimit(1)
-                    .truncationMode(.head)
+                lineGroup(
+                    text: previous, translation: lines.previousTranslation,
+                    isPrevious: true, isVolatile: false, placeholder: false)
             }
-            Text(lines.current ?? "等待語音…")
-                .font(.system(size: captionFontSize, weight: .semibold))
-                .italic(lines.isVolatile)
-                .foregroundStyle(lines.current == nil ? .white.opacity(0.4) : .white)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+            lineGroup(
+                text: lines.current ?? "等待語音…", translation: lines.currentTranslation,
+                isPrevious: false, isVolatile: lines.isVolatile,
+                placeholder: lines.current == nil)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 18)
@@ -56,6 +52,33 @@ public struct CaptionOverlayView: View {
                 .fill(.black.opacity(captionOpacity)))
         .shadow(color: .black.opacity(0.3), radius: 8, y: 2)
         .textSelection(.enabled)
+    }
+
+    /// 一行字幕：原文（前一句淡、當前句亮）＋可選譯文（青色調，疊在原文下）。
+    private func lineGroup(
+        text: String, translation: String?,
+        isPrevious: Bool, isVolatile: Bool, placeholder: Bool
+    ) -> some View {
+        let size = isPrevious ? captionFontSize * 0.7 : captionFontSize
+        return VStack(alignment: .leading, spacing: 2) {
+            Text(text)
+                .font(.system(size: size, weight: isPrevious ? .regular : .semibold))
+                .italic(isVolatile)
+                .foregroundStyle(
+                    placeholder
+                        ? .white.opacity(0.4)
+                        : (isPrevious ? .white.opacity(0.55) : .white))
+                .lineLimit(isPrevious ? 1 : 2)
+                .truncationMode(isPrevious ? .head : .tail)
+                .fixedSize(horizontal: false, vertical: true)
+            if let translation, !translation.isEmpty {
+                Text(translation)
+                    .font(.system(size: size * 0.82, weight: .regular))
+                    .foregroundStyle(.cyan.opacity(isPrevious ? 0.5 : 0.85))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     private var controls: some View {
