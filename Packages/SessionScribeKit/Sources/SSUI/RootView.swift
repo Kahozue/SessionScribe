@@ -620,6 +620,18 @@ public struct RootView: View {
             ) { type in
                 model.addMarker(type)
             }
+            if !model.customMarkerTypes.isEmpty {
+                Menu {
+                    ForEach(model.customMarkerTypes, id: \.rawValue) { type in
+                        Button(type.label) { model.addMarker(type) }
+                    }
+                } label: {
+                    Label("更多標記", systemImage: "ellipsis.circle")
+                }
+                .menuStyle(.borderlessButton)
+                .disabled(!(model.state == .recording || model.state == .paused))
+                .help("自訂標記類型（設定頁管理）")
+            }
             if model.markers.isEmpty {
                 Text(markerHint)
                     .font(.callout)
