@@ -149,17 +149,20 @@ public final class RecordingViewModel {
         do {
             try FileManager.default.createDirectory(
                 at: sessionsRoot, withIntermediateDirectories: true)
-            let recovered = try library.recoverCrashedSessions()
+        } catch {
+            errorMessage = "建立資料夾失敗：\(error.localizedDescription)"
+        }
+        // 以下每項各自降級：崩潰恢復與設定讀取的暫時性／單檔錯誤都不該打掉整個列表
+        // （比照「損毀項目逐項略過、不阻斷列表」的原則）。
+        if let recovered = try? library.recoverCrashedSessions() {
             for session in recovered {
                 let audioDirectory = library.directory(for: session.sessionID)
                     .appending(path: SessionFiles.audioDirectory)
                 _ = try? AudioManifestRecovery.rebuild(audioDirectory: audioDirectory)
             }
-            sessions = try library.sessions()
-            libraryConfig = try LibraryConfigFile.read(from: sessionsRoot)
-        } catch {
-            errorMessage = "載入 session 列表失敗：\(error.localizedDescription)"
         }
+        sessions = (try? library.sessions()) ?? sessions
+        libraryConfig = (try? LibraryConfigFile.read(from: sessionsRoot)) ?? libraryConfig
         inputDevices = AudioInputDevices.available()
     }
 
