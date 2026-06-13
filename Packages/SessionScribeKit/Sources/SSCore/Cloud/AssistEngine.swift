@@ -33,3 +33,38 @@ public struct LocalTranscriptSummarizer: TranscriptSummarizing {
         try await TranscriptSummarizer.generateSummary(from: segments, sessionID: sessionID, locale: locale)
     }
 }
+
+/// 依設定挑整理器/摘要器；任一條件不滿足都回本機（Local Only 程式層強制）。
+/// 只有「總開關開 AND 引擎=雲端 AND 有 active 供應商 AND key 存在」才建構雲端 client。
+public enum AssistResolver {
+    public static func client(settings: CloudLLMSettings, keychain: KeychainStore) -> CloudLLMClient? {
+        guard settings.enabled, settings.engine == .cloud,
+              let provider = settings.activeProvider,
+              let key = try? keychain.secret(account: provider.id), !key.isEmpty,
+              let url = URL(string: provider.baseURL) else {
+            return nil
+        }
+        switch provider.format {
+        case .openAICompatible:
+            return OpenAICompatibleClient(baseURL: url, apiKey: key, model: provider.model)
+        case .anthropic:
+            return AnthropicClient(baseURL: url, apiKey: key, model: provider.model)
+        case .gemini:
+            return GeminiClient(baseURL: url, apiKey: key, model: provider.model)
+        }
+    }
+
+    public static func eventOrganizer(settings: CloudLLMSettings, keychain: KeychainStore) -> EventOrganizing {
+        if let client = client(settings: settings, keychain: keychain) {
+            return CloudEventOrganizer(client: client)
+        }
+        return LocalEventOrganizer()
+    }
+
+    public static func summarizer(settings: CloudLLMSettings, keychain: KeychainStore) -> TranscriptSummarizing {
+        if let client = client(settings: settings, keychain: keychain) {
+            return CloudTranscriptSummarizer(client: client)
+        }
+        return LocalTranscriptSummarizer()
+    }
+}
