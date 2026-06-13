@@ -695,6 +695,11 @@ public final class RecordingViewModel {
         TimeFormatting.hms(mediaSeconds)
     }
 
+    /// 字幕浮層的兩行滾動字幕（規格 1.2）。
+    public var captionLines: CaptionLines {
+        CaptionLines.derive(transcript: transcript, volatileText: volatileText)
+    }
+
     public var stateDescription: (text: String, systemImage: String) {
         switch state {
         case .idle: ("未錄音", "mic.slash")
