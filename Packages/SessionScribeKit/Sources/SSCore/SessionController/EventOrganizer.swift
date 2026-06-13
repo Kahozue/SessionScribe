@@ -158,13 +158,13 @@ public enum EventOrganizer {
 
     // MARK: - 私有
 
-    private static let instructions = """
+    static let instructions = """
         你是論文口試與會議記錄的整理助手。根據使用者提供的逐字稿片段，整理出結構化欄位。
         只做整理與歸納，不得杜撰逐字稿沒有的內容；無法判斷的欄位一律留空字串。
         priority 僅能是 high、medium、low。全部欄位以繁體中文輸出。
         """
 
-    private static let generateInstructions = """
+    static let generateInstructions = """
         你是論文口試與會議記錄的整理助手。逐字稿每行以 [起秒-迄秒] 開頭。
         請把整段逐字稿切分成數個有意義的事件（問答、決議、待辦、重要段落等），
         每個事件填上對應的起訖秒數與結構化欄位。只整理、不杜撰；無法判斷的欄位留空。
