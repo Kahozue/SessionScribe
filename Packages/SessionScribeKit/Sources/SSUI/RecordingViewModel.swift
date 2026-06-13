@@ -474,8 +474,20 @@ public final class RecordingViewModel {
 
     /// segment 時間範圍內的 markers，逐字稿列表內嵌顯示用。
     public func inlineMarkers(for segment: TranscriptSegment) -> [Marker] {
-        markers.filter {
-            $0.mediaSeconds >= segment.startSeconds && $0.mediaSeconds < segment.endSeconds
+        MarkerTimeline.inlineMarkers(for: segment, markers: markers)
+    }
+
+    public func removeMarker(_ markerID: String) {
+        guard let store else { return }
+        let updated = markers.filter { $0.markerID != markerID }
+        guard updated.count != markers.count else { return }
+        Task {
+            do {
+                try await store.saveMarkers(updated)
+                markers = updated
+            } catch {
+                errorMessage = "取消標記失敗：\(error.localizedDescription)"
+            }
         }
     }
 

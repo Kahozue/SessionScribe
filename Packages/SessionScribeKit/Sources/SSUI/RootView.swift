@@ -671,22 +671,13 @@ public struct RootView: View {
     }
 
     private func markerRow(_ marker: Marker) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
-                Label(marker.label, systemImage: "bookmark.fill")
-                    .font(.callout)
-                Spacer()
-                Text(TimeFormatting.hms(marker.mediaSeconds))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-            if !marker.note.isEmpty {
-                Text(marker.note)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+        MarkerInspectorRow(
+            marker: marker,
+            style: MarkerVisualStyle.style(for: marker, template: model.activeTemplate),
+            onJump: nil
+        ) {
+            model.removeMarker(marker.markerID)
         }
-        .padding(.vertical, 2)
     }
 
     // MARK: - Toolbar

@@ -1,7 +1,7 @@
 import Foundation
 
 /// 單一 session 資料夾的儲存服務：建立資料夾結構、metadata 原子寫入、
-/// segment 與 marker 的 append-only 落盤。actor 隔離保證寫入順序。
+/// segment 與 marker 的落盤。actor 隔離保證寫入順序。
 public actor SessionStore {
     public nonisolated let directory: URL
     private var segmentWriter: JSONLWriter?
@@ -62,6 +62,24 @@ public actor SessionStore {
                 url: directory.appending(path: SessionFiles.manualMarkers))
         }
         try markerWriter!.append(marker)
+    }
+
+    /// 重寫 marker 檔案，用於使用者取消既有標記。重寫前關閉 append handle，
+    /// 後續 append 會重新開啟目前檔案，避免寫到已被原子替換的舊 inode。
+    public func saveMarkers(_ markers: [Marker]) throws {
+        try markerWriter?.close()
+        markerWriter = nil
+
+        let url = directory.appending(path: SessionFiles.manualMarkers)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var data = Data()
+        for marker in markers {
+            var line = try SSJSON.lineEncoder.encode(marker)
+            line.append(UInt8(ascii: "\n"))
+            data.append(line)
+        }
+        try data.write(to: url, options: .atomic)
     }
 
     public func loadMarkers() throws -> [Marker] {

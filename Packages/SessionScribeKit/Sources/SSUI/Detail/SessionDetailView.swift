@@ -42,6 +42,18 @@ final class SessionDetailViewModel {
         }
     }
 
+    var sessionTemplate: SessionTemplate {
+        SessionTemplate.template(for: session?.templateID ?? SessionTemplate.builtIns[0].id)
+    }
+
+    var markersByID: [String: Marker] {
+        Dictionary(uniqueKeysWithValues: markers.map { ($0.markerID, $0) })
+    }
+
+    func inlineMarkers(for segment: TranscriptSegment) -> [Marker] {
+        MarkerTimeline.inlineMarkers(for: segment, markers: markers)
+    }
+
     /// 由 markers 與前後文 segments 生成事件草稿並落盤（覆寫既有 events.json）。
     func generateDrafts() {
         guard let session else { return }
@@ -62,6 +74,28 @@ final class SessionDetailViewModel {
             try EventsFile.write(EventsDocument(events: events), to: directory)
         } catch {
             errorMessage = "儲存事件草稿失敗：\(error.localizedDescription)"
+        }
+    }
+
+    func removeMarker(_ markerID: String) {
+        let updatedMarkers = markers.filter { $0.markerID != markerID }
+        guard updatedMarkers.count != markers.count else { return }
+        Task {
+            do {
+                try await store.saveMarkers(updatedMarkers)
+                markers = updatedMarkers
+                let updatedEvents = events.map { event in
+                    var cleaned = event
+                    cleaned.sourceMarkerIDs.removeAll { $0 == markerID }
+                    return cleaned
+                }
+                if updatedEvents != events {
+                    events = updatedEvents
+                    persistEvents()
+                }
+            } catch {
+                errorMessage = "取消標記失敗：\(error.localizedDescription)"
+            }
         }
     }
 
@@ -236,6 +270,8 @@ public struct SessionDetailView: View {
                 } else if transcriptMode == DisplaySettings.listMode {
                     PlainTranscriptView(
                         segments: model.segments,
+                        markers: model.markers,
+                        markerTemplate: model.sessionTemplate,
                         currentSegmentID: model.currentSegmentID,
                         highlightSegmentID: activeHighlightID
                     ) { segment in
@@ -244,6 +280,8 @@ public struct SessionDetailView: View {
                 } else {
                     LyricsTranscriptView(
                         segments: model.segments,
+                        markers: model.markers,
+                        markerTemplate: model.sessionTemplate,
                         currentSegmentID: model.currentSegmentID,
                         highlightSegmentID: activeHighlightID
                     ) { segment in
@@ -374,11 +412,15 @@ public struct SessionDetailView: View {
     }
 
     private func eventCard(_ event: StructuredEvent) -> some View {
-        Button {
+        let style = MarkerVisualStyle.style(
+            for: event, markersByID: model.markersByID, template: model.sessionTemplate)
+        return Button {
             editingEvent = event
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
+                    Image(systemName: "bookmark.fill")
+                        .foregroundStyle(style.tint)
                     Text(event.topic.isEmpty ? event.type : event.topic)
                         .font(.callout.bold())
                         .lineLimit(1)
@@ -419,7 +461,11 @@ public struct SessionDetailView: View {
         }
         .buttonStyle(.plain)
         .padding(8)
-        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+        .background(style.background, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(style.border, lineWidth: 1)
+        )
         .help("點擊編輯這筆事件")
     }
 
@@ -433,29 +479,13 @@ public struct SessionDetailView: View {
                 .foregroundStyle(.secondary)
         } else {
             ForEach(model.markers) { marker in
-                Button {
-                    model.player?.seek(to: marker.mediaSeconds)
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 6) {
-                            Label(marker.label, systemImage: "bookmark.fill")
-                                .font(.callout)
-                            Spacer()
-                            Text(TimeFormatting.hms(marker.mediaSeconds))
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                        }
-                        if !marker.note.isEmpty {
-                            Text(marker.note)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+                MarkerInspectorRow(
+                    marker: marker,
+                    style: MarkerVisualStyle.style(for: marker, template: model.sessionTemplate),
+                    onJump: { model.player?.seek(to: marker.mediaSeconds) }
+                ) {
+                    model.removeMarker(marker.markerID)
                 }
-                .buttonStyle(.plain)
-                .help("跳到 \(TimeFormatting.hms(marker.mediaSeconds))")
             }
         }
     }
@@ -604,6 +634,8 @@ public struct SessionDetailView: View {
 /// 內文可選取複製；點時間戳跳轉播放位置。
 struct LyricsTranscriptView: View {
     let segments: [TranscriptSegment]
+    let markers: [Marker]
+    let markerTemplate: SessionTemplate
     let currentSegmentID: String?
     let highlightSegmentID: String?
     let onSelect: (TranscriptSegment) -> Void
@@ -639,15 +671,23 @@ struct LyricsTranscriptView: View {
     private func lyricsRow(_ segment: TranscriptSegment) -> some View {
         let isCurrent = segment.segmentID == currentSegmentID
         let isHighlighted = segment.segmentID == highlightSegmentID
+        let inlineMarkers = MarkerTimeline.inlineMarkers(for: segment, markers: markers)
         return VStack(alignment: .leading, spacing: 3) {
-            Text(TimeFormatting.hms(segment.startSeconds))
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.tertiary)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    onSelect(segment)
+            HStack(spacing: 6) {
+                Text(TimeFormatting.hms(segment.startSeconds))
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.tertiary)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        onSelect(segment)
+                    }
+                    .help("點擊時間跳到 \(TimeFormatting.hms(segment.startSeconds))")
+                ForEach(inlineMarkers) { marker in
+                    MarkerChip(
+                        marker: marker,
+                        style: MarkerVisualStyle.style(for: marker, template: markerTemplate))
                 }
-                .help("點擊時間跳到 \(TimeFormatting.hms(segment.startSeconds))")
+            }
             Text(segment.text)
                 .font(.system(
                     size: isCurrent ? fontSize * 1.3 : fontSize,
@@ -671,6 +711,8 @@ struct LyricsTranscriptView: View {
 /// 點時間徽章跳轉播放位置，不自動捲動。
 struct PlainTranscriptView: View {
     let segments: [TranscriptSegment]
+    let markers: [Marker]
+    let markerTemplate: SessionTemplate
     let currentSegmentID: String?
     let highlightSegmentID: String?
     let onSelect: (TranscriptSegment) -> Void
@@ -700,22 +742,30 @@ struct PlainTranscriptView: View {
     private func plainRow(_ segment: TranscriptSegment) -> some View {
         let isCurrent = segment.segmentID == currentSegmentID
         let isHighlighted = segment.segmentID == highlightSegmentID
+        let inlineMarkers = MarkerTimeline.inlineMarkers(for: segment, markers: markers)
         return VStack(alignment: .leading, spacing: 4) {
-            Button {
-                onSelect(segment)
-            } label: {
-                Text(
-                    "\(TimeFormatting.hms(segment.startSeconds)) - "
-                        + TimeFormatting.hms(segment.endSeconds)
-                )
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 1)
-                .background(.quaternary, in: Capsule())
+            HStack(spacing: 6) {
+                Button {
+                    onSelect(segment)
+                } label: {
+                    Text(
+                        "\(TimeFormatting.hms(segment.startSeconds)) - "
+                            + TimeFormatting.hms(segment.endSeconds)
+                    )
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(.quaternary, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .help("點擊跳到 \(TimeFormatting.hms(segment.startSeconds))")
+                ForEach(inlineMarkers) { marker in
+                    MarkerChip(
+                        marker: marker,
+                        style: MarkerVisualStyle.style(for: marker, template: markerTemplate))
+                }
             }
-            .buttonStyle(.plain)
-            .help("點擊跳到 \(TimeFormatting.hms(segment.startSeconds))")
             Text(segment.text)
                 .font(.system(size: fontSize, weight: isCurrent ? .semibold : .regular))
                 .lineSpacing(fontSize * 0.35)

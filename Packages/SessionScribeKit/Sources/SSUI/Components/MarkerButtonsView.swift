@@ -43,21 +43,33 @@ public struct MarkerButtonsView: View {
     private func markerButton(_ index: Int) -> some View {
         if index < markerTypes.count {
             let type = markerTypes[index]
+            let style = MarkerVisualStyle.style(forSlot: index)
             Button {
                 onMark(type)
             } label: {
-                VStack(spacing: 2) {
-                    Text(type.label)
-                        .font(.headline)
+                VStack(spacing: 4) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bookmark.fill")
+                            .foregroundStyle(style.tint)
+                        Text(type.label)
+                            .font(.headline)
+                    }
                     Text(hint(index))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, minHeight: 44)
+                .padding(.horizontal, 6)
+                .background(style.background, in: RoundedRectangle(cornerRadius: 6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(style.border, lineWidth: 1)
+                )
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.plain)
             .keyboardShortcut(Self.shortcuts[index], modifiers: .command)
             .disabled(!isEnabled)
+            .opacity(isEnabled ? 1 : 0.45)
             .accessibilityLabel("標記\(type.label)")
         }
     }
