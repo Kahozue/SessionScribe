@@ -91,6 +91,8 @@ public final class RecordingViewModel {
     public private(set) var volatileText: String?
     /// finalized 段落的譯文（規格 1.2 Phase 3），以 segmentID 對應。即時顯示不持久化。
     public private(set) var translations: [String: String] = [:]
+    /// 辨識模型下載進度 0...1；非 nil 表示正在下載，UI 顯示進度條。下載完成或無需下載為 nil。
+    public private(set) var modelDownloadProgress: Double?
     public private(set) var markers: [Marker] = []
     public private(set) var libraryConfig = LibraryConfig()
 
@@ -364,11 +366,22 @@ public final class RecordingViewModel {
             // 使用者選了純錄音模式時直接跳過引擎選擇。
             transcriptionState = .preparing
             let useMock = UserDefaults.standard.bool(forKey: DisplaySettings.useMockEngineKey)
-            if transcribeEnabled,
-                let engine = await EngineSelector.selectAndPrepare(
+            let preparedEngine: (any TranscriptionEngine)?
+            if transcribeEnabled {
+                modelDownloadProgress = 0
+                preparedEngine = await EngineSelector.selectAndPrepare(
                     from: EngineSelector.defaultChain(useMock: useMock),
-                    locale: Locale(identifier: session.locale))
-            {
+                    locale: Locale(identifier: session.locale),
+                    progress: { fraction in
+                        Task { @MainActor in
+                            self.modelDownloadProgress = fraction < 1 ? fraction : nil
+                        }
+                    })
+                modelDownloadProgress = nil
+            } else {
+                preparedEngine = nil
+            }
+            if let engine = preparedEngine {
                 let coordinator = TranscriptionCoordinator(
                     engine: engine, store: store, lexicon: libraryConfig.lexicon)
                 self.coordinator = coordinator
@@ -640,7 +653,34 @@ public final class RecordingViewModel {
         translationCoordinator = nil
         markerService = nil
         store = nil
+        modelDownloadProgress = nil
         transcriptionState = .none
+    }
+
+    /// 設定頁的預先下載：對目前選定的辨識語言下載／備妥模型，回報進度。
+    /// 先下好，正式錄音時模型即就緒、不必等。
+    public func downloadRecognitionModel() {
+        let code =
+            UserDefaults.standard.string(forKey: DisplaySettings.recognitionLanguageKey)
+            ?? CaptionLanguage.zhTW.code
+        guard modelDownloadProgress == nil else { return }
+        Task {
+            modelDownloadProgress = 0
+            let engine = AppleSpeechEngine()
+            do {
+                try await engine.prepare(
+                    locale: Locale(identifier: code),
+                    progress: { fraction in
+                        Task { @MainActor in
+                            self.modelDownloadProgress = fraction < 1 ? fraction : nil
+                        }
+                    })
+                infoMessage = "\(CaptionLanguage.from(code: code).displayName)辨識模型已就緒。"
+            } catch {
+                errorMessage = "下載辨識模型失敗：\(error.localizedDescription)"
+            }
+            modelDownloadProgress = nil
+        }
     }
 
     private func subscribeTranscription(_ coordinator: TranscriptionCoordinator) async {

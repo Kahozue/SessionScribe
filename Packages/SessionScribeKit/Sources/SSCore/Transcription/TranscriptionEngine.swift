@@ -57,6 +57,10 @@ public protocol TranscriptionEngine: Sendable {
     func availability(for locale: Locale) async -> EngineAvailability
     /// 含模型下載引導（AssetInventory）。
     func prepare(locale: Locale) async throws
+    /// 同 prepare(locale:)，但回報下載進度 0...1。不支援進度的引擎用預設實作（直接 prepare）。
+    func prepare(
+        locale: Locale, progress: @escaping @Sendable (Double) -> Void
+    ) async throws
     func start(sessionID: String, locale: Locale) async throws
     func feed(_ slice: AudioSlice) async throws
     func finish() async throws
@@ -69,4 +73,11 @@ public protocol TranscriptionEngine: Sendable {
 
 extension TranscriptionEngine {
     public func setContextualStrings(_ strings: [String]) async {}
+
+    /// 預設：忽略進度，直接 prepare（Legacy、Mock 走這條）。
+    public func prepare(
+        locale: Locale, progress: @escaping @Sendable (Double) -> Void
+    ) async throws {
+        try await prepare(locale: locale)
+    }
 }

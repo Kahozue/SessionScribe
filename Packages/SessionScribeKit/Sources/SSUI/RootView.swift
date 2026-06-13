@@ -565,6 +565,31 @@ public struct RootView: View {
 
     @ViewBuilder
     private var transcriptArea: some View {
+        VStack(spacing: 0) {
+            if let progress = model.modelDownloadProgress {
+                downloadBanner(progress)
+            }
+            transcriptContent
+        }
+    }
+
+    /// 辨識模型下載進度橫幅：開始錄音前若模型未裝就會出現，填滿才開始轉寫。
+    private func downloadBanner(_ progress: Double) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("下載辨識模型中… \(Int(progress * 100))%（就緒後才會開始轉寫）")
+                    .appFont(.callout)
+                Spacer()
+            }
+            ProgressView(value: progress)
+        }
+        .padding(10)
+        .background(.thinMaterial)
+    }
+
+    @ViewBuilder
+    private var transcriptContent: some View {
         if model.activeSession == nil {
             ContentUnavailableView {
                 Label("尚未開始記錄", systemImage: "waveform")

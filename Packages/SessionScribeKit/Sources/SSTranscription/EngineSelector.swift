@@ -19,14 +19,16 @@ public enum EngineSelector {
     }
 
     /// 挑選並完成 prepare（含模型下載）；prepare 失敗時降級到下一個引擎。
+    /// progress 回報目前引擎的模型下載進度 0...1。
     public static func selectAndPrepare(
         from engines: [any TranscriptionEngine],
-        locale: Locale
+        locale: Locale,
+        progress: @escaping @Sendable (Double) -> Void = { _ in }
     ) async -> (any TranscriptionEngine)? {
         for engine in engines {
             guard await engine.availability(for: locale) != .unsupported else { continue }
             do {
-                try await engine.prepare(locale: locale)
+                try await engine.prepare(locale: locale, progress: progress)
                 return engine
             } catch {
                 continue

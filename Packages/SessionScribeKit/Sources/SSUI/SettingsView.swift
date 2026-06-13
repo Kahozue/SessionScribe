@@ -152,6 +152,19 @@ private struct TranscriptionSettingsTab: View {
                 Text("決定逐字稿用哪種語言辨識，也是即時翻譯的來源語言。下一場錄音生效。")
                     .appFont(.caption)
                     .foregroundStyle(.secondary)
+                if let progress = model.modelDownloadProgress {
+                    ProgressView(value: progress) {
+                        Text("下載辨識模型中… \(Int(progress * 100))%")
+                            .appFont(.caption)
+                    }
+                } else {
+                    Button("預先下載此語言模型") {
+                        model.downloadRecognitionModel()
+                    }
+                    Text("先下好，正式錄音時就不必等下載。中文通常已內建；英文、日文首次需下載。")
+                        .appFont(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Section("即時翻譯") {
                 Toggle("開啟即時翻譯（下一場生效）", isOn: $translationEnabled)
