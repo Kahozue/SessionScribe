@@ -27,6 +27,7 @@ public struct SettingsView: View {
         }
         .frame(width: 460)
         .padding(.bottom, 8)
+        .dynamicTypeSize(DisplaySettings.uiTypeSize)
     }
 }
 

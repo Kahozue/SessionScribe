@@ -45,6 +45,7 @@ public struct RootView: View {
         .toolbar(removing: .title)
         .navigationTitle("SessionScribe")
         .task { await model.onLaunch() }
+        .dynamicTypeSize(DisplaySettings.uiTypeSize)
         .preferredColorScheme(DisplaySettings.colorScheme(for: appearance))
         .onChange(of: model.state) { _, newState in
             // 停止錄音後直接選取該則，detailArea 切到含播放器的檢視頁。
