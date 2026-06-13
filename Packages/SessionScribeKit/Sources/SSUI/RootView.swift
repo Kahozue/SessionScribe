@@ -549,6 +549,17 @@ public struct RootView: View {
         }
     }
 
+    /// 工具列匯出鈕的對象：優先取側欄單選的檢視中 session，否則退回錄音中的
+    /// activeSession。瀏覽既有錄音時 activeSession 為 nil，故不能只看它。
+    private var exportTargetSession: Session? {
+        if sidebarSelection.count == 1, let id = sidebarSelection.first,
+            let session = model.sessions.first(where: { $0.sessionID == id })
+        {
+            return session
+        }
+        return model.activeSession
+    }
+
     @ViewBuilder
     private var transcriptArea: some View {
         if model.activeSession == nil {
@@ -707,12 +718,14 @@ public struct RootView: View {
             }
 
             Button {
-                model.exportActiveSession()
+                if let session = exportTargetSession {
+                    model.export(session: session)
+                }
             } label: {
                 Label("匯出", systemImage: "square.and.arrow.up")
             }
-            .disabled(model.activeSession == nil)
-            .help("匯出目前 session（先選擇要匯出的內容）")
+            .disabled(exportTargetSession == nil)
+            .help("匯出目前檢視或錄音中的 session（先選擇要匯出的內容）")
 
             Button {
                 openWindow(id: "floating-transcript")
