@@ -55,7 +55,10 @@ public enum TranscriptSummarizer {
             """
         let createdAt = Date(timeIntervalSince1970: now().timeIntervalSince1970.rounded(.down))
         do {
-            let response = try await session.respond(to: prompt, generating: SummaryFields.self)
+            // 經閘門序列化，避免與「整理」同時打本機模型造成 generationFailed。
+            let response = try await OnDeviceModelGate.shared.run {
+                try await session.respond(to: prompt, generating: SummaryFields.self)
+            }
             return buildSummary(
                 content: response.content.content,
                 keyPoints: response.content.keyPoints,

@@ -26,6 +26,7 @@ public struct RootView: View {
     @FocusState private var renameFieldFocused: Bool
     @FocusState private var transcriptFocused: Bool
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
     @AppStorage(DisplaySettings.appearanceKey)
     private var appearance = "system"
 
@@ -721,11 +722,17 @@ public struct RootView: View {
             .help("匯出目前檢視或錄音中的 session（先選擇要匯出的內容）")
 
             Button {
-                openWindow(id: "floating-transcript")
+                if model.floatingCaptionVisible {
+                    dismissWindow(id: "floating-transcript")
+                    model.floatingCaptionVisible = false
+                } else {
+                    openWindow(id: "floating-transcript")
+                    model.floatingCaptionVisible = true
+                }
             } label: {
-                Label("浮動逐字稿", systemImage: "macwindow.on.rectangle")
+                Label("浮動字幕", systemImage: "macwindow.on.rectangle")
             }
-            .help("開啟置頂的即時逐字稿視窗")
+            .help("開關置頂的字幕浮層（再點一次關閉）")
         }
         ToolbarItemGroup {
             Button {
