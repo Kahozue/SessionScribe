@@ -56,6 +56,22 @@ public enum DisplaySettings {
     public static let defaultFontSize = 16.0
     public static let fontSizeRange = 11.0...28.0
 
+    /// 字幕浮層獨立字級與透明度，與主視窗 fontSize 脫鉤（規格 1.2 字幕浮層）。
+    public static let captionFontSizeKey = "captionFontSize"
+    public static let captionOpacityKey = "captionOpacity"
+    public static let defaultCaptionFontSize = 24.0
+    public static let captionFontSizeRange = 16.0...48.0
+    public static let defaultCaptionOpacity = 0.7
+    public static let captionOpacityRange = 0.3...1.0
+
+    static func clampedCaptionFontSize(_ raw: Double) -> Double {
+        min(max(raw, captionFontSizeRange.lowerBound), captionFontSizeRange.upperBound)
+    }
+
+    static func clampedCaptionOpacity(_ raw: Double) -> Double {
+        min(max(raw, captionOpacityRange.lowerBound), captionOpacityRange.upperBound)
+    }
+
     /// 全域 UI 放大級距。顯式字體另由 fontSize 轉換成點數，這裡保留給系統控制項。
     public static let uiTypeSize: DynamicTypeSize = .xLarge
 
