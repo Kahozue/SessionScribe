@@ -113,17 +113,69 @@ App 啟動的崩潰恢復流程：`SessionLibrary.recoverCrashedSessions` 標記
 
 匯入音檔（`AudioImporter`）走同一套格式：來源音檔解碼後轉成 canonical PCM CAF chunks 與 manifest，讀取量對齊 chunk 邊界使塊長與設定值精確一致；metadata 的 `source` 為 `imported` 且 `ended_at` 於匯入完成時落盤。
 
-## 九、library.json（sessions 根目錄，M7）
+## 九、library.json（sessions 根目錄，M7／v0.2）
 
-對應型別 `LibraryConfig` 與 `SessionCategory`。分類定義存於程式庫層，session 只持有 `category_id` 參照：
+對應型別 `LibraryConfig`、`SessionCategory`、`MarkerType` 與 `LexiconRule`。分類定義存於程式庫層，session 只持有 `category_id` 參照。v0.2 在同檔加入自訂標記類型 `marker_types` 與名詞表 `lexicon`：
 
 ```json
 {
   "schema_version": 1,
   "categories": [
     { "id": "BC59…", "name": "口試", "hidden": false, "order": 0 }
+  ],
+  "marker_types": [
+    { "type": "decision", "label": "決議" }
+  ],
+  "lexicon": [
+    { "from": "博特", "to": "BERT" }
   ]
 }
 ```
 
-讀取時依 `order` 排序；檔案不存在回傳空設定。刪除分類時其下 session 的 `category_id` 改回 null；session 引用了已不存在的分類視為未分類，不會憑空消失。批次刪除 session 優先移到垃圾桶（可復原），失敗才直接移除。
+讀取時依 `order` 排序；檔案不存在回傳空設定。`marker_types` 與 `lexicon` 是 v0.2 新增欄位，舊檔缺欄位時以空陣列解析、`schema_version` 不變（向下相容）。刪除分類時其下 session 的 `category_id` 改回 null；session 引用了已不存在的分類視為未分類，不會憑空消失。批次刪除 session 優先移到垃圾桶（可復原），失敗才直接移除。
+
+`marker_types` 是模板四鍵之外的使用者自訂標記，錄音時自即時右欄「更多標記」選用。`lexicon` 是轉寫後的字面替換校正規則，套用點在 `TranscriptionCoordinator` 的 finalized 落盤前與 volatile 轉發前，只影響後續轉寫、不回頭改既有 segment；`to` 留空表示刪除該詞。
+
+## 十、events.json（v0.2，結構化事件）
+
+對應型別 `StructuredEvent` 與文件外殼 `EventsDocument`，存於各 session 資料夾，原子寫入。由 `EventDraftBuilder` 依 marker 時間戳取前 30 後 90 秒視窗內的 finalized segments 生成草稿，必為 `needs_review: true`，可由檢視頁 Inspector 手動編輯。時間以媒體時間秒數（Double）為準，與其他檔案同軸；CSV 與 Markdown 匯出時才格式化為 HH:MM:SS。
+
+```json
+{
+  "schema_version": 1,
+  "events": [
+    {
+      "schema_version": 1,
+      "event_id": "evt_0001",
+      "session_id": "2026-06-15_1000_a3f2",
+      "start_seconds": 2538.0,
+      "end_seconds": 2582.0,
+      "speaker": "口委A",
+      "speaker_role": "committee",
+      "type": "question",
+      "topic": "研究方法",
+      "content": "口委詢問為什麼選擇此資料集。",
+      "response_summary": "學生說明資料來源限制。",
+      "action_item": "補充代表性說明。",
+      "priority": "high",
+      "confidence": "low",
+      "needs_review": true,
+      "source_segment_ids": ["seg_0132", "seg_0133"],
+      "source_marker_ids": ["m_0001"],
+      "tags": ["資料集", "方法"],
+      "created_at": "2026-06-15T02:00:00Z"
+    }
+  ]
+}
+```
+
+編輯時 `event_id`、`session_id`、`start_seconds`、`end_seconds`、`source_segment_ids`、`source_marker_ids`、`created_at` 為來源欄位不可改；可改 `topic`、`speaker`、`speaker_role`、`content`、`response_summary`、`action_item`、`priority`、`tags` 與 `needs_review`。
+
+## 十一、v0.2 匯出檔
+
+匯出選項視窗（`ExportFormat`）在原有 transcript.md、markers.csv、session.json、JSONL 副本、原始 CAF 之外，新增：
+
+- `structured_notes.md`：依模板呈現結構化事件。論文口試用「口試紀錄」版型與口試導向欄位標籤，其餘模板用通用版。
+- `events.json`：結構化事件原檔。匯出時有既有 events.json 則直接輸出，否則由 markers 即時生成草稿。
+- `events.csv`：事件的完整欄位，陣列欄位以分號串接，RFC 4180 跳脫。
+- `<session_id>.m4a`：依 manifest 順序串接 CAF chunks 轉成單一 AAC 檔（`AudioExporter`，AVMutableComposition＋AppleM4A preset），與原始 CAF 匯出並存不取代。
