@@ -447,22 +447,22 @@ public struct SessionDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             if summary.content.isEmpty {
                 Text("摘要內容空白，請重新產生。")
-                    .appFont(.callout)
+                    .appFont(InspectorCardTypography.summaryBody)
                     .foregroundStyle(.secondary)
             } else {
                 Text(summary.content)
-                    .appFont(.callout)
+                    .appFont(InspectorCardTypography.summaryBody)
                     .textSelection(.enabled)
             }
 
             if !summary.keyPoints.isEmpty {
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("重點")
-                        .appFont(.caption, weight: .bold)
+                        .appFont(InspectorCardTypography.summarySubheading, weight: .bold)
                         .foregroundStyle(.secondary)
                     ForEach(summary.keyPoints, id: \.self) { point in
                         Text("• \(point)")
-                            .appFont(.caption)
+                            .appFont(InspectorCardTypography.summaryListItem)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
                     }
@@ -470,13 +470,13 @@ public struct SessionDetailView: View {
             }
 
             if !summary.actionItems.isEmpty {
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("待辦")
-                        .appFont(.caption, weight: .bold)
+                        .appFont(InspectorCardTypography.summarySubheading, weight: .bold)
                         .foregroundStyle(.secondary)
                     ForEach(summary.actionItems, id: \.self) { item in
                         Text("• \(item)")
-                            .appFont(.caption)
+                            .appFont(InspectorCardTypography.summaryListItem)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
                     }
@@ -484,7 +484,7 @@ public struct SessionDetailView: View {
             }
 
             Text("來源：\(summary.sourceSegmentIDs.count) 段逐字稿")
-                .appFont(.caption2)
+                .appFont(InspectorCardTypography.summarySource)
                 .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -600,25 +600,27 @@ public struct SessionDetailView: View {
                 }
                 HStack(spacing: 8) {
                     Text(event.type)
-                        .appFont(.caption)
+                        .appFont(InspectorCardTypography.eventMetadata)
                         .foregroundStyle(.secondary)
                     Button {
                         model.player?.seek(to: event.startSeconds)
                     } label: {
                         Text(TimeFormatting.hms(event.startSeconds))
-                            .appFont(.caption, monospacedDigit: true)
+                            .appFont(
+                                InspectorCardTypography.eventMetadata,
+                                monospacedDigit: true)
                     }
                     .buttonStyle(.plain)
                     .help("跳到 \(TimeFormatting.hms(event.startSeconds))")
                 }
                 if !event.content.isEmpty {
                     Text(event.content)
-                        .appFont(.caption)
+                        .appFont(InspectorCardTypography.eventContent)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
                 Text("來源：\(event.sourceSegmentIDs.count) 段、\(event.sourceMarkerIDs.count) 標記")
-                    .appFont(.caption2)
+                    .appFont(InspectorCardTypography.eventSource)
                     .foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)

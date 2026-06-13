@@ -31,6 +31,17 @@ enum AppFontStyle: Sendable {
     }
 }
 
+enum InspectorCardTypography {
+    static let summaryBody = AppFontStyle.callout
+    static let summarySubheading = AppFontStyle.callout
+    static let summaryListItem = AppFontStyle.callout
+    static let summarySource = AppFontStyle.callout
+
+    static let eventMetadata = AppFontStyle.callout
+    static let eventContent = AppFontStyle.callout
+    static let eventSource = AppFontStyle.callout
+}
+
 /// 顯示設定的 AppStorage 鍵與輔助。主視窗與浮動視窗共用同一組設定。
 public enum DisplaySettings {
     public static let fontSizeKey = "transcriptFontSize"
