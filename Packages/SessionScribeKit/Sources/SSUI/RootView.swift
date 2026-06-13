@@ -582,36 +582,46 @@ public struct RootView: View {
     }
 
     /// 單鍵快捷的焦點規則（規格書決議 6）：只在逐字稿區持有焦點時生效。
+    /// 單鍵 Q/R/S/A 是論文口試模板的字母助記，對應四鍵位置；其他模板
+    /// 只用 Cmd+1 至 4（位置對應該模板的四個 markerType）。
     private func handleMarkerKey(_ characters: String) -> KeyPress.Result {
         guard model.state == .recording || model.state == .paused else { return .ignored }
+        guard model.activeTemplate.id == "thesis_defense" else { return .ignored }
+        let index: Int
         switch characters.lowercased() {
-        case "q":
-            model.addMarker(.question)
-        case "r":
-            model.addMarker(.requiredRevision)
-        case "s":
-            model.addMarker(.suggestion)
-        case "a":
-            model.addMarker(.importantAnswer)
-        default:
-            return .ignored
+        case "q": index = 0
+        case "r": index = 1
+        case "s": index = 2
+        case "a": index = 3
+        default: return .ignored
         }
+        guard index < model.activeMarkerTypes.count else { return .ignored }
+        model.addMarker(model.activeMarkerTypes[index])
         return .handled
     }
 
     // MARK: - Inspector（即時畫面）
+
+    /// 空標記時的提示：論文口試模板提 Q/R/S/A，其餘模板只提 Cmd 編號。
+    private var markerHint: String {
+        model.activeTemplate.id == "thesis_defense"
+            ? "錄音中按 Q、R、S、A（逐字稿區聚焦時）或 Cmd+1 至 Cmd+4 建立標記。"
+            : "錄音中按 Cmd+1 至 Cmd+4 建立標記（依「\(model.activeTemplate.name)」模板的四鍵）。"
+    }
 
     private var inspectorPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("事件標記")
                 .font(.headline)
             MarkerButtonsView(
+                markerTypes: model.activeMarkerTypes,
+                showLetterHints: model.activeTemplate.id == "thesis_defense",
                 isEnabled: model.state == .recording || model.state == .paused
             ) { type in
                 model.addMarker(type)
             }
             if model.markers.isEmpty {
-                Text("錄音中按 Q、R、S、A（逐字稿區聚焦時）或 Cmd+1 至 Cmd+4 建立標記。")
+                Text(markerHint)
                     .font(.callout)
                     .foregroundStyle(.secondary)
             } else {
@@ -742,6 +752,12 @@ public struct RootView: View {
     /// 錄音選項整合選單：轉寫模式與輸入裝置同一入口，減少工具列雜訊。
     private var recordingOptionsMenu: some View {
         Menu {
+            Picker("場景模板", selection: $model.selectedTemplateID) {
+                ForEach(model.availableTemplates) { template in
+                    Text(template.name).tag(template.id)
+                }
+            }
+            .pickerStyle(.menu)
             Picker("錄音模式", selection: $model.transcribeEnabled) {
                 Label("錄音＋轉寫", systemImage: "waveform.badge.mic").tag(true)
                 Label("純錄音", systemImage: "mic").tag(false)
