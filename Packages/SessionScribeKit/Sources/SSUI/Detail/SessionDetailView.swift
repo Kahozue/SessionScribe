@@ -13,6 +13,7 @@ final class SessionDetailViewModel {
     private(set) var session: Session?
     private(set) var segments: [TranscriptSegment] = []
     private(set) var markers: [Marker] = []
+    private(set) var events: [StructuredEvent] = []
     private(set) var player: SessionPlayer?
     var errorMessage: String?
     private(set) var transcribing = false
@@ -31,10 +32,34 @@ final class SessionDetailViewModel {
             session = try await store.loadMetadata()
             segments = try await store.loadSegments()
             markers = try await store.loadMarkers()
+            events = (try EventsFile.readIfPresent(from: directory))?.events ?? []
             player = try? SessionPlayerCache.shared.player(
                 for: directory.appending(path: SessionFiles.audioDirectory))
         } catch {
             errorMessage = "載入 session 失敗：\(error.localizedDescription)"
+        }
+    }
+
+    /// 由 markers 與前後文 segments 生成事件草稿並落盤（覆寫既有 events.json）。
+    func generateDrafts() {
+        guard let session else { return }
+        events = EventDraftBuilder.drafts(
+            markers: markers, segments: segments, sessionID: session.sessionID)
+        persistEvents()
+    }
+
+    /// 編輯後寫回；來源欄位由呼叫端保留不動。
+    func updateEvent(_ event: StructuredEvent) {
+        guard let index = events.firstIndex(where: { $0.eventID == event.eventID }) else { return }
+        events[index] = event
+        persistEvents()
+    }
+
+    private func persistEvents() {
+        do {
+            try EventsFile.write(EventsDocument(events: events), to: directory)
+        } catch {
+            errorMessage = "儲存事件草稿失敗：\(error.localizedDescription)"
         }
     }
 
@@ -108,6 +133,7 @@ public struct SessionDetailView: View {
     @State private var activeHighlightID: String?
     @State private var editingTitle = false
     @State private var titleDraft = ""
+    @State private var editingEvent: StructuredEvent?
     @FocusState private var titleFieldFocused: Bool
     @AppStorage(DisplaySettings.transcriptModeKey)
     private var transcriptMode = DisplaySettings.lyricsMode
@@ -185,46 +211,140 @@ public struct SessionDetailView: View {
         }
     }
 
-    /// 檢視頁右欄：事件標記列表；點時間跳轉播放。後續功能擴充也放這裡。
+    /// 檢視頁右欄：結構化事件草稿與事件標記；點時間跳轉播放、點事件卡編輯。
     private var detailInspector: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("事件標記")
-                .font(.headline)
-            if model.markers.isEmpty {
-                Text("這個 session 沒有標記。")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                structuredEventsSection
+                Divider()
+                markersSection
+            }
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .inspectorColumnWidth(min: 260, ideal: 320, max: 420)
+        .sheet(item: $editingEvent) { event in
+            EventEditSheet(event: event) { model.updateEvent($0) }
+        }
+    }
+
+    private var structuredEventsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("結構化事件")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    model.generateDrafts()
+                } label: {
+                    Label(model.events.isEmpty ? "產生草稿" : "重新產生", systemImage: "sparkles")
+                        .font(.callout)
+                }
+                .buttonStyle(.borderless)
+                .disabled(model.markers.isEmpty)
+                .help(model.markers.isEmpty ? "沒有標記可生成事件" : "依標記前後文整理成事件草稿")
+            }
+            if model.events.isEmpty {
+                Text(
+                    model.markers.isEmpty
+                        ? "這個 session 沒有標記，無法生成事件草稿。"
+                        : "尚未產生事件草稿。點「產生草稿」依標記整理。"
+                )
+                .font(.callout)
+                .foregroundStyle(.secondary)
             } else {
-                List(model.markers) { marker in
+                ForEach(model.events) { event in
+                    eventCard(event)
+                }
+            }
+        }
+    }
+
+    private func eventCard(_ event: StructuredEvent) -> some View {
+        Button {
+            editingEvent = event
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(event.topic.isEmpty ? event.type : event.topic)
+                        .font(.callout.bold())
+                        .lineLimit(1)
+                    Spacer()
+                    if event.needsReview {
+                        Text("需複查")
+                            .font(.caption2)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(.orange.opacity(0.22), in: Capsule())
+                    }
+                }
+                HStack(spacing: 8) {
+                    Text(event.type)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Button {
-                        model.player?.seek(to: marker.mediaSeconds)
+                        model.player?.seek(to: event.startSeconds)
                     } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 6) {
-                                Label(marker.label, systemImage: "bookmark.fill")
-                                    .font(.callout)
-                                Spacer()
-                                Text(TimeFormatting.hms(marker.mediaSeconds))
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                            }
-                            if !marker.note.isEmpty {
-                                Text(marker.note)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
+                        Text(TimeFormatting.hms(event.startSeconds))
+                            .font(.caption.monospacedDigit())
                     }
                     .buttonStyle(.plain)
-                    .help("跳到 \(TimeFormatting.hms(marker.mediaSeconds))")
+                    .help("跳到 \(TimeFormatting.hms(event.startSeconds))")
                 }
-                .listStyle(.inset)
+                if !event.content.isEmpty {
+                    Text(event.content)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Text("來源：\(event.sourceSegmentIDs.count) 段、\(event.sourceMarkerIDs.count) 標記")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
-            Spacer(minLength: 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .inspectorColumnWidth(min: 240, ideal: 300, max: 380)
+        .buttonStyle(.plain)
+        .padding(8)
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+        .help("點擊編輯這筆事件")
+    }
+
+    @ViewBuilder
+    private var markersSection: some View {
+        Text("事件標記")
+            .font(.headline)
+        if model.markers.isEmpty {
+            Text("這個 session 沒有標記。")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        } else {
+            ForEach(model.markers) { marker in
+                Button {
+                    model.player?.seek(to: marker.mediaSeconds)
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Label(marker.label, systemImage: "bookmark.fill")
+                                .font(.callout)
+                            Spacer()
+                            Text(TimeFormatting.hms(marker.mediaSeconds))
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                        if !marker.note.isEmpty {
+                            Text(marker.note)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("跳到 \(TimeFormatting.hms(marker.mediaSeconds))")
+            }
+        }
     }
 
     /// 標題列：點標題文字改名（仿 iOS）；資訊列只留語言、分段數、標記數。
@@ -493,5 +613,119 @@ struct PlainTranscriptView: View {
         .background(
             isHighlighted ? Color.accentColor.opacity(0.12) : Color.clear,
             in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// 事件草稿編輯表單（v0.2）：可改語意欄位與 needs_review；
+/// eventID、來源 segment／marker、時間與 createdAt 等來源欄位唯讀不變。
+struct EventEditSheet: View {
+    let event: StructuredEvent
+    let onSave: (StructuredEvent) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var topic: String
+    @State private var speaker: String
+    @State private var speakerRole: String
+    @State private var content: String
+    @State private var responseSummary: String
+    @State private var actionItem: String
+    @State private var priority: String
+    @State private var tagsText: String
+    @State private var needsReview: Bool
+
+    init(event: StructuredEvent, onSave: @escaping (StructuredEvent) -> Void) {
+        self.event = event
+        self.onSave = onSave
+        _topic = State(initialValue: event.topic)
+        _speaker = State(initialValue: event.speaker)
+        _speakerRole = State(initialValue: event.speakerRole)
+        _content = State(initialValue: event.content)
+        _responseSummary = State(initialValue: event.responseSummary)
+        _actionItem = State(initialValue: event.actionItem)
+        _priority = State(
+            initialValue: ["high", "medium", "low"].contains(event.priority)
+                ? event.priority : "medium")
+        _tagsText = State(initialValue: event.tags.joined(separator: "、"))
+        _needsReview = State(initialValue: event.needsReview)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("編輯事件").font(.headline)
+                Spacer()
+            }
+            .padding()
+            Divider()
+            Form {
+                Section("分類") {
+                    TextField("主題", text: $topic)
+                    Picker("優先", selection: $priority) {
+                        Text("高").tag("high")
+                        Text("中").tag("medium")
+                        Text("低").tag("low")
+                    }
+                    Toggle("需複查（needs_review）", isOn: $needsReview)
+                }
+                Section("發言") {
+                    TextField("發言者", text: $speaker)
+                    TextField("角色", text: $speakerRole)
+                }
+                Section("內容") {
+                    TextField("提問／內容", text: $content, axis: .vertical)
+                        .lineLimit(2...6)
+                    TextField("回應摘要", text: $responseSummary, axis: .vertical)
+                        .lineLimit(1...4)
+                    TextField("待辦／待補", text: $actionItem, axis: .vertical)
+                        .lineLimit(1...4)
+                    TextField("標籤（以、或逗號分隔）", text: $tagsText)
+                }
+                Section("來源（唯讀）") {
+                    LabeledContent(
+                        "時間",
+                        value: "\(TimeFormatting.hms(event.startSeconds)) - "
+                            + TimeFormatting.hms(event.endSeconds))
+                    LabeledContent(
+                        "來源段落",
+                        value: event.sourceSegmentIDs.isEmpty
+                            ? "無" : event.sourceSegmentIDs.joined(separator: ", "))
+                    LabeledContent(
+                        "來源標記",
+                        value: event.sourceMarkerIDs.isEmpty
+                            ? "無" : event.sourceMarkerIDs.joined(separator: ", "))
+                }
+            }
+            .formStyle(.grouped)
+            Divider()
+            HStack {
+                Spacer()
+                Button("取消") { dismiss() }
+                Button("儲存") {
+                    onSave(edited())
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding()
+        }
+        .frame(width: 420, height: 580)
+    }
+
+    private func edited() -> StructuredEvent {
+        var updated = event
+        updated.topic = topic
+        updated.speaker = speaker
+        updated.speakerRole = speakerRole
+        updated.content = content
+        updated.responseSummary = responseSummary
+        updated.actionItem = actionItem
+        updated.priority = priority
+        updated.tags =
+            tagsText
+            .split(whereSeparator: { $0 == "、" || $0 == "," })
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        updated.needsReview = needsReview
+        return updated
     }
 }
