@@ -52,6 +52,10 @@ public struct CaptionOverlayView: View {
                 .fill(.black.opacity(captionOpacity)))
         .shadow(color: .black.opacity(0.3), radius: 8, y: 2)
         // 不開 textSelection：否則文字會攔截拖曳，整條字幕就拖不動視窗。
+        // 明確掛 WindowDragGesture 讓整條字幕都能拖動視窗；只靠 app 端的
+        // windowBackgroundDragBehavior 不夠，外層 onHover 會讓內容被判為互動而非
+        // 惰性背景，背景拖曳判定就抓不到可拖點，所以這裡用顯式手勢補上。
+        .gesture(WindowDragGesture())
     }
 
     /// 一行字幕：原文（前一句淡、當前句亮）＋可選譯文（青色調，疊在原文下）。
