@@ -38,22 +38,29 @@ public struct TranscriptListView: View {
                 }
             }
             .listStyle(.inset)
+            // 新段落用輕量動畫；volatile 高頻更新時不加動畫，就地瞬間到底，
+            // 避免彈簧動畫互相打斷造成的鈍感（即時感階段，只動呈現層）。
             .onChange(of: model.transcript.count) {
-                scrollToTail(proxy)
+                scrollToTail(proxy, animated: true)
             }
             .onChange(of: model.volatileText) {
-                scrollToTail(proxy)
+                scrollToTail(proxy, animated: false)
             }
         }
     }
 
-    private func scrollToTail(_ proxy: ScrollViewProxy) {
-        withAnimation(.spring(duration: 0.35)) {
+    private func scrollToTail(_ proxy: ScrollViewProxy, animated: Bool) {
+        let scroll = {
             if model.volatileText != nil {
                 proxy.scrollTo("volatile-tail", anchor: .bottom)
             } else if let last = model.transcript.last {
                 proxy.scrollTo(last.segmentID, anchor: .bottom)
             }
+        }
+        if animated {
+            withAnimation(.easeOut(duration: 0.2), scroll)
+        } else {
+            scroll()
         }
     }
 }
