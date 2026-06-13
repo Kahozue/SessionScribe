@@ -29,6 +29,9 @@ public final class RecordingViewModel {
     /// 等待選擇匯出格式的 session；非 nil 時 UI 顯示匯出選項視窗。
     public var exportRequest: Session?
 
+    /// 字幕浮層是否開啟（規格 1.2）：工具列鈕反覆點切換開關，字幕浮層關閉鈕同步歸零。
+    public var floatingCaptionVisible = false
+
     public private(set) var inputDevices: [AudioInputDevice] = []
     public var selectedDeviceUID: String?
 
@@ -684,19 +687,23 @@ public final class RecordingViewModel {
             return
         }
         let coordinator = TranslationCoordinator(translator: AppleTranslator())
-        await coordinator.prepare(
-            source: CaptionLanguage.from(code: recognitionCode).language,
-            target: CaptionLanguage.from(code: targetCode).language)
-        if await coordinator.preparationFailed {
-            infoMessage = "翻譯模型未就緒，本場僅顯示原文。"
-            return
-        }
         translationCoordinator = coordinator
         let updates = await coordinator.updates()
         transcriptTasks.append(
             Task {
                 for await translated in updates {
                     self.translations[translated.segmentID] = translated.text
+                }
+            })
+        // 模型準備（含必要時下載）在背景進行，絕不卡錄音啟動；就緒前的段落不翻譯。
+        infoMessage = "翻譯模型準備中，就緒後譯文才會出現。"
+        let source = CaptionLanguage.from(code: recognitionCode).language
+        let target = CaptionLanguage.from(code: targetCode).language
+        transcriptTasks.append(
+            Task {
+                await coordinator.prepare(source: source, target: target)
+                if await coordinator.preparationFailed {
+                    self.infoMessage = "翻譯模型未就緒，本場僅顯示原文。"
                 }
             })
     }

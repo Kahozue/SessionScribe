@@ -92,7 +92,9 @@ public enum EventOrganizer {
             instructions: Instructions(Self.instructions))
         let prompt = "以下是某個標記前後的逐字稿片段，請依指示整理成結構化欄位：\n\n\(event.content)"
         do {
-            let response = try await session.respond(to: prompt, generating: OrganizedFields.self)
+            let response = try await OnDeviceModelGate.shared.run {
+                try await session.respond(to: prompt, generating: OrganizedFields.self)
+            }
             return apply(response.content, to: event)
         } catch {
             throw OrganizeError.generationFailed(error.localizedDescription)
@@ -123,8 +125,9 @@ public enum EventOrganizer {
         let prompt = "以下是一段帶秒數區間的逐字稿，請切分成數個事件並整理：\n\n\(transcript)"
         let createdAt = Date(timeIntervalSince1970: now().timeIntervalSince1970.rounded(.down))
         do {
-            let response = try await session.respond(
-                to: prompt, generating: GeneratedEventList.self)
+            let response = try await OnDeviceModelGate.shared.run {
+                try await session.respond(to: prompt, generating: GeneratedEventList.self)
+            }
             return response.content.events.enumerated().map { index, gen in
                 buildEvent(
                     index: index, topic: gen.topic, type: gen.type, priority: gen.priority,

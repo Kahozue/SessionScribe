@@ -51,7 +51,7 @@ public struct CaptionOverlayView: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(.black.opacity(captionOpacity)))
         .shadow(color: .black.opacity(0.3), radius: 8, y: 2)
-        .textSelection(.enabled)
+        // 不開 textSelection：否則文字會攔截拖曳，整條字幕就拖不動視窗。
     }
 
     /// 一行字幕：原文（前一句淡、當前句亮）＋可選譯文（青色調，疊在原文下）。
@@ -102,6 +102,7 @@ public struct CaptionOverlayView: View {
                 .help("字幕底色透明度")
             Button {
                 dismissWindow(id: "floating-transcript")
+                model.floatingCaptionVisible = false
             } label: {
                 Image(systemName: "xmark")
             }
