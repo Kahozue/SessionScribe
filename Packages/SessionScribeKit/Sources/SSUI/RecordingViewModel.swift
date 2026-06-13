@@ -64,6 +64,26 @@ public final class RecordingViewModel {
     }
     private static let sortOrderKey = "sessionSortOrder"
 
+    /// 下一場要套用的模板 id（工具列選擇，跨啟動記憶）。
+    public var selectedTemplateID: String {
+        didSet {
+            UserDefaults.standard.set(selectedTemplateID, forKey: Self.selectedTemplateKey)
+        }
+    }
+    private static let selectedTemplateKey = "selectedTemplateID"
+
+    public var availableTemplates: [SessionTemplate] { SessionTemplate.builtIns }
+
+    /// 當前場次的模板；尚未建立場次時退回下一場選定的模板（供按鈕預覽）。
+    public var activeTemplate: SessionTemplate {
+        SessionTemplate.template(for: activeSession?.templateID ?? selectedTemplateID)
+    }
+
+    /// 即時標記按鈕要呈現的四個 markerType（依當前模板）。
+    public var activeMarkerTypes: [MarkerType] {
+        activeTemplate.markerTypes
+    }
+
     public private(set) var transcript: [TranscriptSegment] = []
     public private(set) var volatileText: String?
     public private(set) var markers: [Marker] = []
@@ -102,6 +122,9 @@ public final class RecordingViewModel {
             SessionSortOrder(
                 rawValue: UserDefaults.standard.string(forKey: Self.sortOrderKey) ?? ""
             ) ?? .newestFirst
+        selectedTemplateID =
+            UserDefaults.standard.string(forKey: Self.selectedTemplateKey)
+            ?? SessionTemplate.builtIns[0].id
     }
 
     /// app container 內的 Application Support/SessionScribe/Sessions。
@@ -270,7 +293,7 @@ public final class RecordingViewModel {
             var session = Session(
                 sessionID: Session.makeID(),
                 title: Self.nextRecordingTitle(existing: sessions),
-                templateID: "thesis_defense",
+                templateID: selectedTemplateID,
                 locale: "zh-TW",
                 audioInput: deviceName ?? "系統預設輸入",
                 appVersion: Self.appVersion

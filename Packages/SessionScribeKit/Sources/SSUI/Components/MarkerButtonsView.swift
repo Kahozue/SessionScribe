@@ -1,19 +1,29 @@
 import SSCore
 import SwiftUI
 
-/// 四個大標記按鈕：Q 問題、R 必改、S 建議、A 重要回答。
-/// 大按鈕永遠可點（錄音中），Cmd+1 至 4 為全域快捷；單鍵 Q/R/S/A
-/// 的焦點規則由逐字稿區的 onKeyPress 處理。
+/// 模板四鍵標記按鈕：2×2 格對應當前場次模板的前四個 markerType，
+/// 以位置對應 Cmd+1 至 4。論文口試模板額外顯示 Q/R/S/A 字母助記，
+/// 其餘模板只顯示 Cmd 編號。單鍵 Q/R/S/A 的焦點規則由逐字稿區的
+/// onKeyPress 處理（僅論文口試生效）。
 public struct MarkerButtonsView: View {
+    let markerTypes: [MarkerType]
+    let showLetterHints: Bool
     let isEnabled: Bool
     let onMark: (MarkerType) -> Void
 
-    public init(isEnabled: Bool, onMark: @escaping (MarkerType) -> Void) {
+    public init(
+        markerTypes: [MarkerType],
+        showLetterHints: Bool,
+        isEnabled: Bool,
+        onMark: @escaping (MarkerType) -> Void
+    ) {
+        self.markerTypes = markerTypes
+        self.showLetterHints = showLetterHints
         self.isEnabled = isEnabled
         self.onMark = onMark
     }
 
-    private static let hints = ["Q ⌘1", "R ⌘2", "S ⌘3", "A ⌘4"]
+    private static let letters = ["Q", "R", "S", "A"]
     private static let shortcuts: [KeyEquivalent] = ["1", "2", "3", "4"]
 
     public var body: some View {
@@ -29,23 +39,30 @@ public struct MarkerButtonsView: View {
         }
     }
 
+    @ViewBuilder
     private func markerButton(_ index: Int) -> some View {
-        let type = MarkerType.defaults[index]
-        return Button {
-            onMark(type)
-        } label: {
-            VStack(spacing: 2) {
-                Text(type.label)
-                    .font(.headline)
-                Text(Self.hints[index])
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+        if index < markerTypes.count {
+            let type = markerTypes[index]
+            Button {
+                onMark(type)
+            } label: {
+                VStack(spacing: 2) {
+                    Text(type.label)
+                        .font(.headline)
+                    Text(hint(index))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44)
             }
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .buttonStyle(.bordered)
+            .keyboardShortcut(Self.shortcuts[index], modifiers: .command)
+            .disabled(!isEnabled)
+            .accessibilityLabel("標記\(type.label)")
         }
-        .buttonStyle(.bordered)
-        .keyboardShortcut(Self.shortcuts[index], modifiers: .command)
-        .disabled(!isEnabled)
-        .accessibilityLabel("標記\(type.label)")
+    }
+
+    private func hint(_ index: Int) -> String {
+        showLetterHints ? "\(Self.letters[index]) ⌘\(index + 1)" : "⌘\(index + 1)"
     }
 }
