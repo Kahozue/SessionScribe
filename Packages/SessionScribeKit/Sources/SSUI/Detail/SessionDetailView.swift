@@ -314,6 +314,7 @@ public struct SessionDetailView: View {
     @State private var editingEvent: StructuredEvent?
     @State private var summaryExpanded = true
     @State private var eventsExpanded = true
+    @State private var markersExpanded = true
     @FocusState private var titleFieldFocused: Bool
     @AppStorage(DisplaySettings.transcriptModeKey)
     private var transcriptMode = DisplaySettings.lyricsMode
@@ -670,22 +671,40 @@ public struct SessionDetailView: View {
         .help("點擊編輯這筆事件")
     }
 
-    @ViewBuilder
     private var markersSection: some View {
-        Text("事件標記")
-            .appFont(.headline)
-        if model.markers.isEmpty {
-            Text("這個 session 沒有標記。")
-                .appFont(.callout)
-                .foregroundStyle(.secondary)
-        } else {
-            ForEach(model.markers) { marker in
-                MarkerInspectorRow(
-                    marker: marker,
-                    style: MarkerVisualStyle.style(for: marker, template: model.sessionTemplate),
-                    onJump: { model.player?.seek(to: marker.mediaSeconds) }
-                ) {
-                    model.removeMarker(marker.markerID)
+        VStack(alignment: .leading, spacing: 10) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { markersExpanded.toggle() }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: markersExpanded ? "chevron.down" : "chevron.right")
+                        .appFont(.caption)
+                    Text(
+                        model.markers.isEmpty ? "事件標記" : "事件標記（\(model.markers.count)）"
+                    )
+                    .appFont(.headline)
+                    Spacer()
+                }
+            }
+            .buttonStyle(.plain)
+            .help(markersExpanded ? "收合" : "展開")
+
+            if markersExpanded {
+                if model.markers.isEmpty {
+                    Text("這個 session 沒有標記。")
+                        .appFont(.callout)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(model.markers) { marker in
+                        MarkerInspectorRow(
+                            marker: marker,
+                            style: MarkerVisualStyle.style(
+                                for: marker, template: model.sessionTemplate),
+                            onJump: { model.player?.seek(to: marker.mediaSeconds) }
+                        ) {
+                            model.removeMarker(marker.markerID)
+                        }
+                    }
                 }
             }
         }
