@@ -175,6 +175,10 @@ private struct TranscriptionSettingsTab: View {
                     .disabled(!canAdd)
                 }
             }
+            // 臨時：即時翻譯 sandbox spike（Phase 3 前置 gate），驗完連同檔案刪除。
+            Section("即時翻譯 spike（臨時驗證）") {
+                TranslationSpikeView()
+            }
         }
         .formStyle(.grouped)
     }
