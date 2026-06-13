@@ -47,6 +47,7 @@ public struct FloatingTranscriptView: View {
         }
         .frame(minWidth: 320, minHeight: 200)
         .background(.thinMaterial)
+        .dynamicTypeSize(DisplaySettings.uiTypeSize)
         .preferredColorScheme(DisplaySettings.colorScheme(for: appearance))
     }
 
