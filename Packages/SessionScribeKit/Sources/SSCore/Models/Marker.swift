@@ -52,14 +52,20 @@ public struct Marker: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
-/// 預設 marker type 與顯示標籤。Marker.type 本身是開放字串，這裡只提供內建四種。
-public struct MarkerType: Equatable, Hashable, Sendable {
+/// 預設 marker type 與顯示標籤。Marker.type 本身是開放字串，
+/// 內建四種之外可由使用者自訂（存於 library.json，v0.2）。
+public struct MarkerType: Codable, Equatable, Hashable, Sendable {
     public let rawValue: String
     public let label: String
 
     public init(rawValue: String, label: String) {
         self.rawValue = rawValue
         self.label = label
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case rawValue = "type"
+        case label
     }
 
     public static let question = MarkerType(rawValue: "question", label: "問題")
