@@ -104,9 +104,9 @@ swift test --package-path Packages/SessionScribeKit
 3. **摘要可用性**：沒有逐字稿時摘要按鈕停用；本機 Apple Intelligence 未開或模型未就緒時，按鈕停用並顯示原因。
 4. **兩小時級長錄**：磁碟用量約 350MB 一小時、記憶體無顯著成長、chunk 輪替每五分鐘一次無爆音斷點。
 
-## 六、雲端整理實機驗收清單（手動，v0.3 Text Cloud Assist）
+## 六、雲端整理實機驗收清單（手動，v0.3 Text Cloud Assist，已通過）
 
-需各家有效 API key。三家分別填 key 後逐項驗：
+需各家有效 API key。三家分別填 key 後逐項驗（2026-06-14 實機驗收通過）：
 
 1. **三家測試連線**：設定頁「雲端」分頁，分別以 OpenAI 相容、Anthropic、Gemini 樣板新增供應商、填 key、按「測試連線」，各看到「連線成功」。錯 key 應顯示「API key 無效或未授權（401）」之類清楚訊息。
 2. **雲端事件整理與摘要**：開總開關、引擎設雲端、選定供應商。對有逐字稿的 session 在檢視頁按「AI 整理／AI 產生草稿」與「AI 產生摘要」，雲端回填語意欄位與摘要，事件標 needs_review，本機逐字稿不被覆蓋。切引擎回本機後行為回到本機 FoundationModels。
