@@ -264,19 +264,17 @@ private struct CloudSettingsTab: View {
                 ForEach(Self.featureRows, id: \.0) { feature, label, cloudEnabled in
                     Picker(label, selection: Binding(
                         get: { settings.engine(for: feature) },
-                        set: { settings.setEngine($0, for: feature); persist() })) {
+                        set: { newValue in
+                            // 即時 ASR 雲端串流開發中：不接受選成雲端（segment 點了不生效）。
+                            guard cloudEnabled || newValue != .cloud else { return }
+                            settings.setEngine(newValue, for: feature); persist()
+                        })) {
                         Text("本地").tag(AssistEngineKind.local)
                         Text(cloudEnabled ? "雲端" : "雲端（開發中）").tag(AssistEngineKind.cloud)
                     }
                     .pickerStyle(.segmented)
                     .disabled(!settings.enabled)
                     .opacity(cloudEnabled ? 1 : 0.6)
-                    .onChange(of: settings.enabled) {
-                        // 即時 ASR 不開放雲端：若被設成雲端則拉回本地。
-                        if !cloudEnabled, settings.engine(for: feature) == .cloud {
-                            settings.setEngine(.local, for: feature); persist()
-                        }
-                    }
                 }
             }
 
@@ -374,7 +372,9 @@ private struct ProviderSlotSection: View {
 
     private func removeProvider(_ id: String) {
         settings.providers.removeAll { $0.id == id }
-        if providerID == id { providerID = nil }
+        // 同一供應商可能同時被文字槽與語音槽選用，兩槽都要清掉懸空參考。
+        if settings.textProviderID == id { settings.textProviderID = nil }
+        if settings.audioProviderID == id { settings.audioProviderID = nil }
         try? keychain.deleteSecret(account: id)
         loadKey()
         persist()
