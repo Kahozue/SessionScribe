@@ -238,73 +238,125 @@ private struct TranscriptionSettingsTab: View {
 
 private struct CloudSettingsTab: View {
     @State private var settings = CloudLLMSettings.load()
-    @State private var apiKey = ""
     @State private var showEnableWarning = false
-    @State private var testResult: String?
     private let keychain: KeychainStore = SystemKeychainStore()
 
-    private var active: CloudProviderConfig? { settings.activeProvider }
+    private static let featureRows: [(AssistFeature, String, Bool)] = [
+        (.offlineTranscript, "轉錄稿", true),
+        (.liveASR, "即時 ASR", false),   // 雲端串流開發中：雲端段停用
+        (.summary, "摘要", true),
+        (.events, "結構化事件", true),
+        (.translation, "字幕翻譯", true),
+    ]
 
     var body: some View {
         Form {
             Section {
-                Toggle("啟用雲端整理", isOn: Binding(
+                Toggle("啟用雲端", isOn: Binding(
                     get: { settings.enabled },
                     set: { newValue in
                         if newValue { showEnableWarning = true }
                         else { settings.enabled = false; persist() }
                     }))
-                Picker("整理引擎", selection: Binding(
-                    get: { settings.engine }, set: { settings.engine = $0; persist() })) {
-                    Text("本機").tag(AssistEngineKind.local)
-                    Text("雲端").tag(AssistEngineKind.cloud)
-                }
-                .disabled(!settings.enabled)
             }
 
-            Section("供應商") {
-                Picker("使用", selection: Binding(
-                    get: { settings.activeProviderID ?? "" },
-                    set: { settings.activeProviderID = $0; loadKey(); persist() })) {
-                    Text("未選擇").tag("")
-                    ForEach(settings.providers) { p in Text(p.displayName).tag(p.id) }
-                }
-                Menu("新增供應商") {
-                    ForEach(CloudProviderConfig.builtInTemplates) { tpl in
-                        Button(tpl.displayName) { addTemplate(tpl) }
+            Section("每項功能引擎") {
+                ForEach(Self.featureRows, id: \.0) { feature, label, cloudEnabled in
+                    Picker(label, selection: Binding(
+                        get: { settings.engine(for: feature) },
+                        set: { settings.setEngine($0, for: feature); persist() })) {
+                        Text("本地").tag(AssistEngineKind.local)
+                        Text(cloudEnabled ? "雲端" : "雲端（開發中）").tag(AssistEngineKind.cloud)
+                    }
+                    .pickerStyle(.segmented)
+                    .disabled(!settings.enabled)
+                    .opacity(cloudEnabled ? 1 : 0.6)
+                    .onChange(of: settings.enabled) {
+                        // 即時 ASR 不開放雲端：若被設成雲端則拉回本地。
+                        if !cloudEnabled, settings.engine(for: feature) == .cloud {
+                            settings.setEngine(.local, for: feature); persist()
+                        }
                     }
                 }
+            }
+
+            ProviderSlotSection(
+                title: "文字類供應商（摘要/事件/翻譯）",
+                settings: $settings, keychain: keychain,
+                providerID: $settings.textProviderID, sttOnly: false)
+
+            ProviderSlotSection(
+                title: "語音類供應商（轉錄稿/ASR）",
+                settings: $settings, keychain: keychain,
+                providerID: $settings.audioProviderID, sttOnly: true)
+        }
+        .formStyle(.grouped)
+        .alert("啟用雲端", isPresented: $showEnableWarning) {
+            Button("取消", role: .cancel) {}
+            Button("啟用") { settings.enabled = true; persist() }
+        } message: {
+            Text("依各功能設定運作。選為雲端的文字功能會上傳逐字稿與事件文字；選為雲端的轉錄稿會上傳音訊。未選雲端者一律留在本機。AI 產物標記需複查。")
+        }
+    }
+
+    private func persist() { settings.save() }
+}
+
+/// 單一供應商槽：選 active、新增樣板、編輯目前供應商與金鑰、測試連線。
+private struct ProviderSlotSection: View {
+    let title: String
+    @Binding var settings: CloudLLMSettings
+    let keychain: KeychainStore
+    @Binding var providerID: String?
+    /// 只列支援 STT 的供應商（語音槽）。
+    let sttOnly: Bool
+
+    @State private var apiKey = ""
+    @State private var testResult: String?
+
+    private var visibleProviders: [CloudProviderConfig] {
+        sttOnly ? settings.providers.filter { $0.format.supportsSTT } : settings.providers
+    }
+    private var active: CloudProviderConfig? {
+        settings.providers.first { $0.id == providerID }
+    }
+    private var templates: [CloudProviderConfig] {
+        sttOnly ? CloudProviderConfig.builtInTemplates.filter { $0.format.supportsSTT }
+                : CloudProviderConfig.builtInTemplates
+    }
+
+    var body: some View {
+        Section(title) {
+            Picker("使用", selection: Binding(
+                get: { providerID ?? "" },
+                set: { providerID = $0.isEmpty ? nil : $0; loadKey(); persist() })) {
+                Text("未選擇").tag("")
+                ForEach(visibleProviders) { p in Text(p.displayName).tag(p.id) }
+            }
+            Menu("新增供應商") {
+                ForEach(templates) { tpl in Button(tpl.displayName) { addTemplate(tpl) } }
             }
 
             if let provider = active,
                let index = settings.providers.firstIndex(where: { $0.id == provider.id }) {
-                Section(provider.displayName) {
-                    Picker("格式", selection: $settings.providers[index].format) {
-                        ForEach(CloudProviderFormat.allCases, id: \.self) {
-                            Text($0.displayName).tag($0)
-                        }
+                Picker("格式", selection: $settings.providers[index].format) {
+                    ForEach(CloudProviderFormat.allCases.filter { !sttOnly || $0.supportsSTT }, id: \.self) {
+                        Text($0.displayName).tag($0)
                     }
-                    TextField("Base URL", text: $settings.providers[index].baseURL)
-                    TextField("Model", text: $settings.providers[index].model)
-                    SecureField("API key", text: $apiKey)
-                    HStack {
-                        Button("儲存金鑰") { saveKey(account: provider.id) }
-                        Button("測試連線") { testConnection() }
-                        if let testResult {
-                            Text(testResult).appFont(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    Button("刪除此供應商", role: .destructive) { removeProvider(provider.id) }
                 }
+                TextField("Base URL", text: $settings.providers[index].baseURL)
+                TextField("Model", text: $settings.providers[index].model)
+                SecureField("API key", text: $apiKey)
+                HStack {
+                    Button("儲存金鑰") { saveKey(account: provider.id) }
+                    Button("測試連線") { testConnection() }
+                    if let testResult {
+                        Text(testResult).appFont(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Button("刪除此供應商", role: .destructive) { removeProvider(provider.id) }
                 .onChange(of: settings.providers) { persist() }
             }
-        }
-        .formStyle(.grouped)
-        .alert("啟用雲端整理", isPresented: $showEnableWarning) {
-            Button("取消", role: .cancel) {}
-            Button("啟用") { settings.enabled = true; persist() }
-        } message: {
-            Text("選定的逐字稿或事件內容會送往所選供應商，音訊不會送出。AI 產物會標記需複查。")
         }
         .onAppear { loadKey() }
     }
@@ -315,23 +367,21 @@ private struct CloudSettingsTab: View {
         var copy = tpl
         copy.id = "\(tpl.id)-\(UUID().uuidString.prefix(6))"
         settings.providers.append(copy)
-        settings.activeProviderID = copy.id
+        providerID = copy.id
         apiKey = ""
         persist()
     }
 
     private func removeProvider(_ id: String) {
         settings.providers.removeAll { $0.id == id }
-        if settings.activeProviderID == id {
-            settings.activeProviderID = settings.providers.first?.id
-        }
+        if providerID == id { providerID = nil }
         try? keychain.deleteSecret(account: id)
         loadKey()
         persist()
     }
 
     private func loadKey() {
-        apiKey = (try? keychain.secret(account: settings.activeProviderID ?? "")) ?? ""
+        apiKey = (try? keychain.secret(account: providerID ?? "")) ?? ""
     }
 
     private func saveKey(account: String) {
@@ -342,8 +392,7 @@ private struct CloudSettingsTab: View {
     private func testConnection() {
         guard let provider = active else { return }
         try? keychain.setSecret(apiKey, account: provider.id)
-        var probe = settings; probe.enabled = true; probe.engine = .cloud
-        guard let client = AssistResolver.client(settings: probe, keychain: keychain) else {
+        guard let client = AssistResolver.makeClient(provider: provider, key: apiKey) else {
             testResult = "設定不完整"; return
         }
         testResult = "測試中…"
