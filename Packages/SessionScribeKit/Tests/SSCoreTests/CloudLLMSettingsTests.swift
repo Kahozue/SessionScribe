@@ -3,26 +3,63 @@ import Testing
 @testable import SSCore
 
 struct CloudLLMSettingsTests {
-    @Test func 預設關閉且引擎為本機() {
+    @Test func 預設關閉且各功能本機() {
         let s = CloudLLMSettings()
         #expect(s.enabled == false)
-        #expect(s.engine == .local)
         #expect(s.providers.isEmpty)
-        #expect(s.activeProvider == nil)
+        for f in AssistFeature.allCases { #expect(s.engine(for: f) == .local) }
+        #expect(s.textProviderID == nil)
+        #expect(s.audioProviderID == nil)
     }
 
     @Test func 編碼解碼往返() throws {
         var s = CloudLLMSettings()
-        let p = CloudProviderConfig(id: "p1", format: .anthropic, displayName: "Claude",
-            baseURL: "https://api.anthropic.com", model: "claude-sonnet-4-6")
-        s.providers = [p]
-        s.activeProviderID = "p1"
+        s.providers = [CloudProviderConfig(id: "p1", format: .anthropic, displayName: "Claude",
+            baseURL: "https://api.anthropic.com", model: "claude-sonnet-4-6")]
         s.enabled = true
-        s.engine = .cloud
+        s.setEngine(.cloud, for: .summary)
+        s.textProviderID = "p1"
         let data = try JSONEncoder().encode(s)
         let back = try JSONDecoder().decode(CloudLLMSettings.self, from: data)
         #expect(back == s)
-        #expect(back.activeProvider?.format == .anthropic)
+        #expect(back.engine(for: .summary) == .cloud)
+        #expect(back.engine(for: .events) == .local)
+    }
+
+    @Test func 舊格式遷移到per_feature() throws {
+        let legacy = """
+        {"enabled":true,"engine":"cloud","activeProviderID":"p1",
+         "providers":[{"id":"p1","format":"openai_compatible","displayName":"X",
+         "baseURL":"https://api.example.com/v1","model":"m"}]}
+        """
+        let s = try JSONDecoder().decode(CloudLLMSettings.self, from: Data(legacy.utf8))
+        #expect(s.enabled)
+        #expect(s.engine(for: .summary) == .cloud)
+        #expect(s.engine(for: .events) == .cloud)
+        #expect(s.engine(for: .translation) == .cloud)
+        #expect(s.engine(for: .offlineTranscript) == .cloud)
+        #expect(s.engine(for: .liveASR) == .local)
+        #expect(s.textProviderID == "p1")
+        #expect(s.audioProviderID == "p1")
+    }
+
+    @Test func provider依capability取槽() {
+        var s = CloudLLMSettings()
+        let text = CloudProviderConfig(id: "t", format: .anthropic, displayName: "T",
+            baseURL: "https://a", model: "m")
+        let audio = CloudProviderConfig(id: "a", format: .openAICompatible, displayName: "A",
+            baseURL: "https://b", model: "whisper-1")
+        s.providers = [text, audio]
+        s.textProviderID = "t"; s.audioProviderID = "a"
+        #expect(s.provider(for: .summary)?.id == "t")
+        #expect(s.provider(for: .offlineTranscript)?.id == "a")
+    }
+
+    @Test func anyFeatureCloud() {
+        var s = CloudLLMSettings(); s.enabled = true
+        #expect(s.anyFeatureCloud == false)
+        s.setEngine(.cloud, for: .events)
+        #expect(s.anyFeatureCloud)
     }
 
     @Test func 預設供應商樣板齊四家() {

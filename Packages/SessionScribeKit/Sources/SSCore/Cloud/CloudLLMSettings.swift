@@ -33,18 +33,86 @@ public struct CloudProviderConfig: Codable, Equatable, Sendable, Identifiable {
 
 public struct CloudLLMSettings: Codable, Equatable, Sendable {
     public var enabled: Bool
-    public var engine: AssistEngineKind
     public var providers: [CloudProviderConfig]
-    public var activeProviderID: String?
+    /// 以 AssistFeature.rawValue 為鍵；未列出者視為本機。
+    public var featureEngines: [String: AssistEngineKind]
+    public var textProviderID: String?
+    public var audioProviderID: String?
 
-    public init(enabled: Bool = false, engine: AssistEngineKind = .local,
-                providers: [CloudProviderConfig] = [], activeProviderID: String? = nil) {
-        self.enabled = enabled; self.engine = engine
-        self.providers = providers; self.activeProviderID = activeProviderID
+    public init(enabled: Bool = false, providers: [CloudProviderConfig] = [],
+                featureEngines: [String: AssistEngineKind] = [:],
+                textProviderID: String? = nil, audioProviderID: String? = nil) {
+        self.enabled = enabled
+        self.providers = providers
+        self.featureEngines = featureEngines
+        self.textProviderID = textProviderID
+        self.audioProviderID = audioProviderID
     }
 
-    public var activeProvider: CloudProviderConfig? {
-        providers.first { $0.id == activeProviderID }
+    // MARK: 讀取輔助
+
+    public func engine(for feature: AssistFeature) -> AssistEngineKind {
+        featureEngines[feature.rawValue] ?? .local
+    }
+
+    public mutating func setEngine(_ kind: AssistEngineKind, for feature: AssistFeature) {
+        featureEngines[feature.rawValue] = kind
+    }
+
+    public func providerID(for feature: AssistFeature) -> String? {
+        switch feature.capability {
+        case .text: textProviderID
+        case .audio: audioProviderID
+        }
+    }
+
+    public func provider(for feature: AssistFeature) -> CloudProviderConfig? {
+        guard let id = providerID(for: feature) else { return nil }
+        return providers.first { $0.id == id }
+    }
+
+    /// 主畫面雲端狀態標用：總開關開且至少一項功能選雲端。
+    public var anyFeatureCloud: Bool {
+        enabled && AssistFeature.allCases.contains { engine(for: $0) == .cloud }
+    }
+
+    // MARK: Codable（含舊格式遷移）
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled, providers, featureEngines, textProviderID, audioProviderID
+        case engine, activeProviderID   // 舊格式
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        providers = try c.decodeIfPresent([CloudProviderConfig].self, forKey: .providers) ?? []
+        if let fe = try c.decodeIfPresent([String: AssistEngineKind].self, forKey: .featureEngines) {
+            featureEngines = fe
+            textProviderID = try c.decodeIfPresent(String.self, forKey: .textProviderID)
+            audioProviderID = try c.decodeIfPresent(String.self, forKey: .audioProviderID)
+        } else {
+            // 舊格式：單一 engine 套用到文字三項與離線轉錄稿，liveASR 維持本機。
+            let legacy = try c.decodeIfPresent(AssistEngineKind.self, forKey: .engine) ?? .local
+            let legacyProvider = try c.decodeIfPresent(String.self, forKey: .activeProviderID)
+            var fe: [String: AssistEngineKind] = [:]
+            for f in [AssistFeature.summary, .events, .translation, .offlineTranscript] {
+                fe[f.rawValue] = legacy
+            }
+            fe[AssistFeature.liveASR.rawValue] = .local
+            featureEngines = fe
+            textProviderID = legacyProvider
+            audioProviderID = legacyProvider
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(enabled, forKey: .enabled)
+        try c.encode(providers, forKey: .providers)
+        try c.encode(featureEngines, forKey: .featureEngines)
+        try c.encodeIfPresent(textProviderID, forKey: .textProviderID)
+        try c.encodeIfPresent(audioProviderID, forKey: .audioProviderID)
     }
 
     // MARK: UserDefaults 持久化（key 不在此，存 Keychain）
