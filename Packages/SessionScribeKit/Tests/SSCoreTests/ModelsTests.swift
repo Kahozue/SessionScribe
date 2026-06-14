@@ -19,7 +19,7 @@ struct SessionTests {
         )
         let data = try SSJSON.lineEncoder.encode(session)
         let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        #expect(object["schema_version"] as? Int == 1)
+        #expect(object["schema_version"] as? Int == SchemaVersion.current)
         #expect(object["session_id"] as? String == "2026-06-15_1000_a3f2")
         #expect(object["template_id"] as? String == "thesis_defense")
         #expect(object["started_at"] is NSNull)
@@ -35,7 +35,7 @@ struct SessionTests {
     func decodesSpecSample() throws {
         let json = """
         {
-          "schema_version": 1,
+          "schema_version": 2,
           "session_id": "2026-06-15_1000_a3f2",
           "title": "碩士論文口試 - 第一場",
           "template_id": "thesis_defense",
@@ -86,7 +86,7 @@ struct SessionTests {
     func decodesTextAndAudioCloudPrivacyMode() throws {
         let json = """
         {
-          "schema_version": 1,
+          "schema_version": 2,
           "session_id": "2026-06-15_1000_a3f2",
           "title": "測試",
           "template_id": "thesis_defense",
@@ -128,7 +128,7 @@ struct TranscriptSegmentTests {
     func decodesSpecSample() throws {
         let json = """
         {
-          "schema_version": 1,
+          "schema_version": 2,
           "segment_id": "seg_0001",
           "session_id": "2026-06-15_1000_a3f2",
           "start_seconds": 12.3,
@@ -138,6 +138,7 @@ struct TranscriptSegmentTests {
           "language": "zh-TW",
           "engine": "SpeechAnalyzer",
           "model": "system",
+          "speaker": "speaker_0",
           "confidence": null,
           "created_at": "2026-06-15T10:01:30+08:00"
         }
@@ -147,10 +148,11 @@ struct TranscriptSegmentTests {
         #expect(segment.startSeconds == 12.3)
         #expect(segment.endSeconds == 18.7)
         #expect(segment.isFinal)
+        #expect(segment.speaker == "speaker_0")
         #expect(segment.confidence == nil)
     }
 
-    @Test("編碼輸出 snake_case 鍵且 confidence 為明確 null")
+    @Test("編碼輸出 snake_case 鍵且 optional 欄位為明確 null")
     func encodingUsesSnakeCaseAndExplicitNull() throws {
         let segment = TranscriptSegment(
             segmentID: "seg_0001",
@@ -170,6 +172,7 @@ struct TranscriptSegmentTests {
         #expect(object["start_seconds"] as? Double == 12.3)
         #expect(object["end_seconds"] as? Double == 18.7)
         #expect(object["is_final"] as? Bool == true)
+        #expect(object["speaker"] is NSNull)
         #expect(object["confidence"] is NSNull)
     }
 
@@ -206,6 +209,7 @@ struct TranscriptSegmentTests {
             createdAt: Date(timeIntervalSince1970: 100)
         )
         segment.confidence = 0.5
+        segment.speaker = "speaker_0"
         let data = try SSJSON.lineEncoder.encode(segment)
         let decoded = try SSJSON.decoder.decode(TranscriptSegment.self, from: data)
         #expect(decoded == segment)
@@ -219,7 +223,7 @@ struct MarkerTests {
     func decodesSpecSample() throws {
         let json = """
         {
-          "schema_version": 1,
+          "schema_version": 2,
           "marker_id": "m_0001",
           "session_id": "2026-06-15_1000_a3f2",
           "media_seconds": 2538.0,

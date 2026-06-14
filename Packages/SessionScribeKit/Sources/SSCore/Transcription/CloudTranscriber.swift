@@ -19,7 +19,8 @@ public enum CloudTranscriber {
                 isFinal: true,
                 language: language,
                 engine: "cloud",
-                model: model)
+                model: model,
+                speaker: s.speaker)
         }
     }
 

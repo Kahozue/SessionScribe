@@ -13,6 +13,7 @@ public struct TranscriptSegment: Codable, Equatable, Sendable, Identifiable {
     public var language: String
     public var engine: String
     public var model: String
+    public var speaker: String?
     public var confidence: Double?
     public var createdAt: Date
 
@@ -29,6 +30,7 @@ public struct TranscriptSegment: Codable, Equatable, Sendable, Identifiable {
         language: String,
         engine: String,
         model: String,
+        speaker: String? = nil,
         confidence: Double? = nil,
         createdAt: Date = Date()
     ) {
@@ -42,6 +44,7 @@ public struct TranscriptSegment: Codable, Equatable, Sendable, Identifiable {
         self.language = language
         self.engine = engine
         self.model = model
+        self.speaker = speaker
         self.confidence = confidence
         self.createdAt = createdAt
     }
@@ -57,11 +60,12 @@ public struct TranscriptSegment: Codable, Equatable, Sendable, Identifiable {
         case language
         case engine
         case model
+        case speaker
         case confidence
         case createdAt = "created_at"
     }
 
-    // confidence 輸出明確 null（規格書第八節範例格式）。
+    // optional 欄位輸出明確 null（規格書第八節範例格式）。
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(schemaVersion, forKey: .schemaVersion)
@@ -74,6 +78,7 @@ public struct TranscriptSegment: Codable, Equatable, Sendable, Identifiable {
         try container.encode(language, forKey: .language)
         try container.encode(engine, forKey: .engine)
         try container.encode(model, forKey: .model)
+        try container.encode(speaker, forKey: .speaker)
         try container.encode(confidence, forKey: .confidence)
         try container.encode(createdAt, forKey: .createdAt)
     }

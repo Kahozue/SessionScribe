@@ -5,14 +5,16 @@ import Testing
 struct CloudTranscriberTests {
     @Test func STT段落對應為TranscriptSegment() {
         let stt = [
-            CloudSTTSegment(startSeconds: 0, endSeconds: 1.5, text: "甲"),
-            CloudSTTSegment(startSeconds: 1.5, endSeconds: 3, text: "乙"),
+            CloudSTTSegment(startSeconds: 0, endSeconds: 1.5, text: "甲", speaker: "speaker_0"),
+            CloudSTTSegment(startSeconds: 1.5, endSeconds: 3, text: "乙", speaker: "speaker_1"),
         ]
         let segs = CloudTranscriber.makeSegments(
-            from: stt, sessionID: "s1", language: "zh-TW", model: "whisper-1")
+            from: stt, sessionID: "s1", language: "zh-TW",
+            model: "gpt-4o-transcribe-diarize")
         #expect(segs.count == 2)
         #expect(segs[0].sessionID == "s1")
         #expect(segs[0].text == "甲")
+        #expect(segs[0].speaker == "speaker_0")
         #expect(segs[1].startSeconds == 1.5)
         #expect(segs.allSatisfy { $0.isFinal })
         #expect(segs.allSatisfy { $0.engine == "cloud" })

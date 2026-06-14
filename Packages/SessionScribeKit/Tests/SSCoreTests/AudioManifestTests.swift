@@ -9,7 +9,7 @@ struct AudioManifestTests {
     func decodesSpecSample() throws {
         let json = """
         {
-          "schema_version": 1,
+          "schema_version": 2,
           "sample_rate": 48000,
           "channels": 1,
           "chunks": [
@@ -43,7 +43,7 @@ struct AudioManifestTests {
             ])
         let data = try SSJSON.lineEncoder.encode(manifest)
         let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        #expect(object["schema_version"] as? Int == 1)
+        #expect(object["schema_version"] as? Int == SchemaVersion.current)
         #expect(object["sample_rate"] as? Double == 48000)
         #expect(object["channels"] as? Int == 1)
         let chunks = try #require(object["chunks"] as? [[String: Any]])

@@ -1,7 +1,7 @@
 import Foundation
 
 /// OpenAI /audio/transcriptions（multipart/form-data）。
-/// 要求 verbose_json 取得 segment 級時間；無 segments 時整段一句。
+/// Whisper 使用 verbose_json；GPT-4o transcribe 模型使用各自支援的 JSON 格式。
 public struct OpenAISTTClient: CloudSTTClient {
     let baseURL: URL
     let apiKey: String
@@ -16,10 +16,30 @@ public struct OpenAISTTClient: CloudSTTClient {
         self.transport = transport
     }
 
-    private struct Verbose: Decodable {
-        struct Segment: Decodable { let start: Double; let end: Double; let text: String }
+    private struct TranscriptionResponse: Decodable {
+        struct Segment: Decodable {
+            let start: Double
+            let end: Double
+            let text: String
+            let speaker: String?
+        }
         let text: String?
         let segments: [Segment]?
+    }
+
+    private var usesDiarizedResponse: Bool {
+        model == "gpt-4o-transcribe-diarize"
+    }
+
+    private var responseFormat: String {
+        switch model {
+        case "gpt-4o-transcribe-diarize":
+            "diarized_json"
+        case "gpt-4o-transcribe", "gpt-4o-mini-transcribe":
+            "json"
+        default:
+            "verbose_json"
+        }
     }
 
     public func transcribe(audioFileURL: URL, languageCode: String?) async throws -> [CloudSTTSegment] {
@@ -31,7 +51,13 @@ public struct OpenAISTTClient: CloudSTTClient {
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
         let audio = try Data(contentsOf: audioFileURL)
-        var fields: [(String, String)] = [("model", model), ("response_format", "verbose_json")]
+        var fields: [(String, String)] = [
+            ("model", model),
+            ("response_format", responseFormat),
+        ]
+        if usesDiarizedResponse {
+            fields.append(("chunking_strategy", "auto"))
+        }
         if let languageCode { fields.append(("language", languageCode)) }
         var body = Data()
         func append(_ s: String) { body.append(Data(s.utf8)) }
@@ -52,13 +78,14 @@ public struct OpenAISTTClient: CloudSTTClient {
             throw CloudLLMError.http(status: http.statusCode,
                 body: String(data: data, encoding: .utf8) ?? "")
         }
-        guard let decoded = try? JSONDecoder().decode(Verbose.self, from: data) else {
+        guard let decoded = try? JSONDecoder().decode(TranscriptionResponse.self, from: data) else {
             throw CloudLLMError.malformedResponse("STT 回應無法解析")
         }
         if let segments = decoded.segments, !segments.isEmpty {
             return segments.map {
                 CloudSTTSegment(startSeconds: $0.start, endSeconds: $0.end,
-                    text: $0.text.trimmingCharacters(in: .whitespacesAndNewlines))
+                    text: $0.text.trimmingCharacters(in: .whitespacesAndNewlines),
+                    speaker: $0.speaker)
             }
         }
         let text = (decoded.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)

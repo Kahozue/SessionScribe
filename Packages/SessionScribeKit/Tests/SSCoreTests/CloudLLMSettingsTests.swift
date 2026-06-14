@@ -73,7 +73,7 @@ struct CloudLLMSettingsTests {
     @Test func 語音供應商樣板只列可直接STT的預設值() {
         let defaults = CloudProviderConfig.builtInAudioTemplates
         #expect(defaults.map(\.displayName) == ["OpenAI", "Gemini"])
-        #expect(defaults.first { $0.displayName == "OpenAI" }?.model == "whisper-1")
+        #expect(defaults.first { $0.displayName == "OpenAI" }?.model == "gpt-4o-transcribe-diarize")
         #expect(defaults.allSatisfy { $0.format.supportsSTT })
     }
 

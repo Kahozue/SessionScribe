@@ -34,7 +34,7 @@ public struct CloudProviderConfig: Codable, Equatable, Sendable, Identifiable {
     /// 不能直接用於 /audio/transcriptions，因此語音槽有自己的 STT 預設值。
     public static let builtInAudioTemplates: [CloudProviderConfig] = [
         .init(id: "openai-stt", format: .openAICompatible, displayName: "OpenAI",
-              baseURL: "https://api.openai.com/v1", model: "whisper-1"),
+              baseURL: "https://api.openai.com/v1", model: "gpt-4o-transcribe-diarize"),
         .init(id: "gemini-stt", format: .gemini, displayName: "Gemini",
               baseURL: "https://generativelanguage.googleapis.com", model: "gemini-2.0-flash"),
     ]
