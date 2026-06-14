@@ -43,10 +43,17 @@ final class SessionDetailViewModel {
         AssistResolver.summarizer(settings: cloudSettings, keychain: keychain)
     }
 
-    /// 文字整理（摘要/事件）目前是否任一走雲端，供 canRunAI / 隱私標記沿用。
-    var usingCloudAssist: Bool {
+    private var usingCloudSummary: Bool {
         AssistResolver.client(settings: cloudSettings, keychain: keychain, feature: .summary) != nil
-            || AssistResolver.client(settings: cloudSettings, keychain: keychain, feature: .events) != nil
+    }
+
+    private var usingCloudEvents: Bool {
+        AssistResolver.client(settings: cloudSettings, keychain: keychain, feature: .events) != nil
+    }
+
+    /// 文字整理（摘要/事件）目前是否任一走雲端，供狀態顯示沿用。
+    var usingCloudAssist: Bool {
+        usingCloudSummary || usingCloudEvents
     }
 
     func load() async {
@@ -152,7 +159,7 @@ final class SessionDetailViewModel {
                 summary = try await resolvedSummarizer.summarize(
                     from: segs, sessionID: sessionID, locale: locale)
                 persistSummary()
-                await markTextCloudAssistIfNeeded()
+                await markTextCloudAssistIfNeeded(for: .summary)
             } catch {
                 errorMessage = "AI 產生摘要失敗：\(error.localizedDescription)"
             }
@@ -185,7 +192,7 @@ final class SessionDetailViewModel {
                 }
                 events = organized
                 persistEvents()
-                await markTextCloudAssistIfNeeded()
+                await markTextCloudAssistIfNeeded(for: .events)
             } catch {
                 errorMessage = "AI 整理失敗：\(error.localizedDescription)"
             }
@@ -206,7 +213,7 @@ final class SessionDetailViewModel {
                 events = try await resolvedOrganizer.generateEvents(
                     from: segs, sessionID: sessionID, locale: locale)
                 persistEvents()
-                await markTextCloudAssistIfNeeded()
+                await markTextCloudAssistIfNeeded(for: .events)
             } catch {
                 errorMessage = "AI 產生草稿失敗：\(error.localizedDescription)"
             }
@@ -215,19 +222,26 @@ final class SessionDetailViewModel {
 
     /// 魔杖可按的條件：引擎可用（雲端生效或本機模型可用），且有逐字稿可生成或已有草稿可整理。
     var canRunAI: Bool {
-        (usingCloudAssist || organizeAvailabilityMessage == nil)
+        (usingCloudEvents || organizeAvailabilityMessage == nil)
             && (!segments.isEmpty || !events.isEmpty)
     }
 
     var canGenerateSummary: Bool {
-        (usingCloudAssist || summaryAvailabilityMessage == nil) && !segments.isEmpty
+        (usingCloudSummary || summaryAvailabilityMessage == nil) && !segments.isEmpty
+    }
+
+    private struct TranscriptionRun {
+        let segments: [TranscriptSegment]
+        let usedAudioCloud: Bool
     }
 
     /// 跑雲端整理/摘要成功後，如實把該 session 的 privacyMode 記為 textCloudAssist。
-    private func markTextCloudAssistIfNeeded() async {
-        guard usingCloudAssist, var current = session,
-              current.privacyMode != .textCloudAssist else { return }
-        current.privacyMode = .textCloudAssist
+    private func markTextCloudAssistIfNeeded(for feature: AssistFeature) async {
+        guard AssistResolver.client(settings: cloudSettings, keychain: keychain, feature: feature) != nil,
+              var current = session else { return }
+        let nextMode = current.privacyMode.merging(.textCloudAssist)
+        guard current.privacyMode != nextMode else { return }
+        current.privacyMode = nextMode
         do {
             try await store.saveMetadata(current)
             session = current
@@ -238,8 +252,10 @@ final class SessionDetailViewModel {
 
     /// 雲端離線轉寫成功後，把該 session 的 privacyMode 記為 audioCloudASR。
     private func markAudioCloudIfNeeded() async {
-        guard var current = session, current.privacyMode != .audioCloudASR else { return }
-        current.privacyMode = .audioCloudASR
+        guard var current = session else { return }
+        let nextMode = current.privacyMode.merging(.audioCloudASR)
+        guard current.privacyMode != nextMode else { return }
+        current.privacyMode = nextMode
         do {
             try await store.saveMetadata(current)
             session = current
@@ -271,21 +287,33 @@ final class SessionDetailViewModel {
     }
 
     /// 對既有音訊離線轉寫（匯入的 session 或純錄音場次）。
-    /// reset=true 為重新轉錄：先清空既有逐字稿再轉，避免附加重複。
+    /// reset=true 為重新轉錄：先寫入暫存 store，成功後才原子替換既有逐字稿。
     func transcribe(reset: Bool = false) async {
         guard let session, !transcribing else { return }
         transcribing = true
         transcribeProgress = 0
         defer { transcribing = false }
-        if reset {
-            do {
-                try await store.resetSegments()
-                segments = []
-            } catch {
-                errorMessage = "清空舊逐字稿失敗：\(error.localizedDescription)"
-                return
+        do {
+            let result: TranscriptionRun
+            if reset {
+                let tmpRoot = FileManager.default.temporaryDirectory
+                    .appending(path: "ss-retranscribe-\(UUID().uuidString)")
+                try FileManager.default.createDirectory(at: tmpRoot, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: tmpRoot) }
+                let tempStore = try await SessionStore.create(session, in: tmpRoot)
+                result = try await runTranscription(session: session, outputStore: tempStore)
+                try await store.replaceSegments(result.segments)
+            } else {
+                result = try await runTranscription(session: session, outputStore: store)
             }
+            segments = result.segments
+            if result.usedAudioCloud { await markAudioCloudIfNeeded() }
+        } catch {
+            errorMessage = "轉寫失敗：\(error.localizedDescription)"
         }
+    }
+
+    private func runTranscription(session: Session, outputStore: SessionStore) async throws -> TranscriptionRun {
         // 雲端離線轉寫（規格 1.4）：轉錄稿選雲端且供應商與 key 齊備時走雲端，否則本地。
         let cloudSettings = CloudLLMSettings.load()
         if let sttClient = AssistResolver.sttClient(settings: cloudSettings, keychain: keychain),
@@ -295,16 +323,13 @@ final class SessionDetailViewModel {
             do {
                 try await CloudTranscriber.transcribe(
                     sessionDirectory: directory, session: session, client: sttClient,
-                    store: store, model: audioModel, lexicon: config.lexicon
+                    store: outputStore, model: audioModel, lexicon: config.lexicon
                 ) { progress in
                     Task { @MainActor in self.transcribeProgress = progress }
                 }
-                segments = try await store.loadSegments()
-                await markAudioCloudIfNeeded()
-            } catch {
-                errorMessage = "雲端轉寫失敗：\(error.localizedDescription)"
+                return TranscriptionRun(
+                    segments: try await outputStore.loadSegments(), usedAudioCloud: true)
             }
-            return
         }
 
         let useMock = UserDefaults.standard.bool(forKey: DisplaySettings.useMockEngineKey)
@@ -313,24 +338,21 @@ final class SessionDetailViewModel {
                 from: EngineSelector.defaultChain(useMock: useMock),
                 locale: Locale(identifier: session.locale))
         else {
-            errorMessage = "沒有可用的轉寫引擎。"
-            return
+            throw NSError(
+                domain: "SessionScribe.Transcription", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "沒有可用的轉寫引擎。"])
         }
         // 名詞表存於 sessions 根目錄（本 session 目錄的上層）的 library.json。
         let config = (try? LibraryConfigFile.read(from: directory.deletingLastPathComponent()))
             ?? LibraryConfig()
         let coordinator = TranscriptionCoordinator(
-            engine: engine, store: store, lexicon: config.lexicon)
-        do {
-            try await OfflineTranscriber.transcribe(
-                sessionDirectory: directory, session: session, coordinator: coordinator
-            ) { progress in
-                Task { @MainActor in self.transcribeProgress = progress }
-            }
-            segments = try await store.loadSegments()
-        } catch {
-            errorMessage = "轉寫失敗：\(error.localizedDescription)"
+            engine: engine, store: outputStore, lexicon: config.lexicon)
+        try await OfflineTranscriber.transcribe(
+            sessionDirectory: directory, session: session, coordinator: coordinator
+        ) { progress in
+            Task { @MainActor in self.transcribeProgress = progress }
         }
+        return TranscriptionRun(segments: try await outputStore.loadSegments(), usedAudioCloud: false)
     }
 }
 

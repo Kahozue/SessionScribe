@@ -105,7 +105,7 @@ macOS 原生桌面應用程式，核心能力：
 
 1. **Local Only**（預設）：所有五項功能（離線轉錄稿、即時 ASR、摘要、結構化事件、字幕翻譯）皆設為本地，音訊與逐字稿留本機，使用 Apple 本機 ASR，零網路請求（entitlements 強制）。
 2. **Text Cloud Assist**（v0.3 已實作，規格 1.4 擴充）：摘要、結構化事件、字幕翻譯三項文字類功能可個別選雲端，只把選定的逐字稿或事件文字送往雲端 LLM，不涉音訊；支援 OpenAI 相容／Anthropic／Gemini 三種線路格式，每供應商可設 base URL／model，API key 存 Keychain（不進 UserDefaults、不寫檔）。首次開啟總開關跳警告，產物一律 `needs_review`。詳見規格 1.3、1.4。
-3. **Audio Cloud ASR**（規格 1.4 實作離線轉錄稿雲端）：離線轉錄稿功能選雲端時，該 session 的整段音訊會匯出為單一 .m4a 上傳雲端 STT（OpenAI 相容或 Gemini，Anthropic 不支援 STT）；成功後該 session 的 `privacyMode` 標為 `audio_cloud_asr`。即時 ASR 的雲端串流尚未實作，設定面板的雲端選項顯示但停用（標「開發中」），實際仍走本地。
+3. **Audio Cloud ASR**（規格 1.4 實作離線轉錄稿雲端）：離線轉錄稿功能選雲端時，該 session 的整段音訊會匯出為單一 .m4a 上傳雲端 STT（OpenAI 相容或 Gemini，Anthropic 不支援 STT）；成功後該 session 的 `privacyMode` 標為 `audio_cloud_asr`。若同一 session 也曾使用文字類雲端功能，標為 `text_and_audio_cloud`。即時 ASR 的雲端串流尚未實作，設定面板的雲端選項顯示但停用（標「開發中」），實際仍走本地。
 
 依各功能設定運作：音訊僅在「離線轉錄稿」選雲端時，於該 session 執行轉寫時才上傳；文字類功能選雲端只送文字（逐字稿或事件文字），絕不送音訊。未選雲端的功能一律留在本機，零網路請求。
 
@@ -420,8 +420,8 @@ v0.2 已增加：模板化 `structured_notes.md`（論文口試格式照 aim.md 
 
 1. **五項功能各自選本地/雲端**：`AssistFeature` 列舉離線轉錄稿（`offlineTranscript`）、即時 ASR（`liveASR`）、摘要（`summary`）、結構化事件（`events`）、字幕翻譯（`translation`），各自依 `capability` 分為語音類（離線轉錄稿、即時 ASR）或文字類（摘要、結構化事件、字幕翻譯）。設定頁「每項功能引擎」區提供五列 segmented 本地/雲端切換。
 2. **本次落地四項雲端**：離線轉錄稿、摘要、結構化事件、字幕翻譯選雲端時皆會實際呼叫雲端服務。即時 ASR 的雲端段在設定頁顯示但停用（標「雲端（開發中）」），選了會被拉回本地；資料模型已含 `liveASR` 鍵，未來接串流不需再改 schema。
-3. **文字類與語音類兩個供應商槽**：`CloudLLMSettings` 分 `textProviderID`（摘要/結構化事件/字幕翻譯共用）與 `audioProviderID`（離線轉錄稿/即時 ASR 共用），各自選一個 active 供應商。語音類供應商選單只列 `CloudProviderFormat.supportsSTT == true` 者（OpenAI 相容、Gemini；Anthropic 無 STT API，不列入）。
-4. **雲端離線轉錄稿（音訊上傳）**：離線轉錄稿選雲端、語音類供應商與 key 齊備時，`AssistResolver.sttClient` 回傳 `OpenAISTTClient`（`POST /audio/transcriptions`，multipart，`verbose_json` 取 segment 時間）或 `GeminiSTTClient`（`generateContent` inline audio，整段一句、無 segment 時間）。`CloudTranscriber` 重用 `AudioExporter` 把整段 session 音訊匯出為單一 `.m4a` 上傳，回傳結果套用名詞表後以 `TranscriptSegment` 落盤（`engine: "cloud"`）。成功後該 session 的 `privacyMode` 標為 `audioCloudASR`（`audio_cloud_asr`）。任一條件不齊備（總開關關、該功能非雲端、供應商非 STT 格式、key 缺）即回 nil，路由層退回本地離線轉寫。
+3. **文字類與語音類兩個供應商槽**：`CloudLLMSettings` 分 `textProviderID`（摘要/結構化事件/字幕翻譯共用）與 `audioProviderID`（離線轉錄稿/即時 ASR 共用），各自選一個 active 供應商。語音類供應商選單只列 `CloudProviderFormat.supportsSTT == true` 者（OpenAI 相容、Gemini；Anthropic 無 STT API，不列入）。語音槽新增供應商使用語音專用樣板，OpenAI 預設 model 為 `whisper-1`。
+4. **雲端離線轉錄稿（音訊上傳）**：離線轉錄稿選雲端、語音類供應商與 key 齊備時，`AssistResolver.sttClient` 回傳 `OpenAISTTClient`（`POST /audio/transcriptions`，multipart，`verbose_json` 取 segment 時間）或 `GeminiSTTClient`（`generateContent` inline audio，整段一句、無 segment 時間）。`CloudTranscriber` 重用 `AudioExporter` 把整段 session 音訊匯出為單一 `.m4a` 上傳，回傳結果套用名詞表後以 `TranscriptSegment` 落盤（`engine: "cloud"`）。成功後該 session 的 `privacyMode` 標為 `audioCloudASR`（`audio_cloud_asr`）；若文字類雲端也曾成功，標為 `textAndAudioCloud`（`text_and_audio_cloud`）。任一條件不齊備（總開關關、該功能非雲端、供應商非 STT 格式、key 缺）即回 nil，路由層退回本地離線轉寫。
 5. **雲端字幕翻譯（只送文字）**：字幕翻譯選雲端、文字類供應商與 key 齊備時，`AssistResolver.client(feature: .translation)` 回傳 chat client，`CloudTranslator` 以 prompt 把每句定稿文字譯為目標語言，沿用既有「定稿後出現譯文、疊在原文下」流程；只送文字，不涉音訊。否則退回本地 `AppleTranslator`。
 6. **路由與 Local Only 程式層強制**：`AssistResolver.client(settings:keychain:feature:)` 依 `feature.capability` 取對應供應商槽，需「總開關開 AND 該功能 engine=雲端 AND 對應供應商存在 AND key 非空」才建構雲端 client，任一不符回 nil 並由呼叫端退回本地；`sttClient` 額外要求供應商 `supportsSTT`。`summarizer`/`eventOrganizer` 分別綁定 `.summary`/`.events`。
 7. **隱私文案**：設定頁啟用雲端前的警告改為「依各功能設定運作。選為雲端的文字功能會上傳逐字稿與事件文字；選為雲端的轉錄稿會上傳音訊。未選雲端者一律留在本機。AI 產物標記需複查。」
@@ -436,5 +436,5 @@ v0.2 已增加：模板化 `structured_notes.md`（論文口試格式照 aim.md 
 
 - 雲端離線轉錄稿為單檔上傳，受供應商的檔案大小／時長上限約束；不另做分段重試。
 - Gemini STT 不回傳 segment 級時間，整段音訊產生一筆逐字稿；OpenAI 相容端點若回傳 `verbose_json` 的 `segments` 則按其相對時間對齊媒體時間。
-- 不預檢供應商是否提供 `/audio/transcriptions`：OpenAI 相容格式中部分端點（如 DeepSeek）並無此端點，選為語音類供應商後執行時才會回連線錯誤。
+- 不預檢供應商是否提供 `/audio/transcriptions`：OpenAI 相容格式中部分端點（如 DeepSeek）並無此端點，若手動選為語音類供應商，執行時才會回連線錯誤。語音槽的內建新增樣板只提供 OpenAI STT 與 Gemini。
 - 即時 ASR 雲端串流不在此次範圍，僅保留設定項與資料模型。

@@ -392,7 +392,11 @@ public final class RecordingViewModel {
                 session.asrEngine = engine.info.name
                 try await store.saveMetadata(session)
                 transcriptionState = .ready(engine.info.name)
-                await setUpTranslation(recognitionCode: recognitionCode)
+                if await setUpTranslation(recognitionCode: recognitionCode) {
+                    session.privacyMode = RecordingPrivacyPolicy
+                        .modeAfterCloudTranslation(session.privacyMode)
+                    try await store.saveMetadata(session)
+                }
             } else {
                 coordinator = nil
                 transcriptionState = .recordingOnly
@@ -718,29 +722,32 @@ public final class RecordingViewModel {
     /// 依設定挑 translator：已設定雲端文字供應商則走 CloudTranslator，否則走本地
     /// AppleTranslator（需 macOS 26.4 以上，否則本場僅顯示原文）。
     /// prepare（含必要時下載模型）在錄音前完成；失敗則本場僅顯示原文，不影響轉寫錄音。
-    private func setUpTranslation(recognitionCode: String) async {
+    private func setUpTranslation(recognitionCode: String) async -> Bool {
         translationCoordinator = nil
         guard UserDefaults.standard.bool(forKey: DisplaySettings.translationEnabledKey) else {
-            return
+            return false
         }
         let targetCode =
             UserDefaults.standard.string(forKey: DisplaySettings.translationTargetKey)
             ?? CaptionLanguage.zhTW.code
-        guard targetCode != recognitionCode else { return }
+        guard targetCode != recognitionCode else { return false }
         let source = CaptionLanguage.from(code: recognitionCode).language
         let target = CaptionLanguage.from(code: targetCode).language
         let cloudSettings = CloudLLMSettings.load()
         let keychain: KeychainStore = SystemKeychainStore()
         let translator: any LiveTranslator
+        let usesCloudTranslation: Bool
         if let client = AssistResolver.client(
             settings: cloudSettings, keychain: keychain, feature: .translation) {
             translator = CloudTranslator(client: client, target: target)
+            usesCloudTranslation = true
         } else {
             guard #available(macOS 26.4, *) else {
                 infoMessage = "即時翻譯需要 macOS 26.4 以上，本場僅顯示原文。"
-                return
+                return false
             }
             translator = AppleTranslator()
+            usesCloudTranslation = false
         }
         let coordinator = TranslationCoordinator(translator: translator)
         translationCoordinator = coordinator
@@ -751,8 +758,8 @@ public final class RecordingViewModel {
                     self.translations[translated.segmentID] = translated.text
                 }
             })
-        // 模型準備（含必要時下載）在背景進行，絕不卡錄音啟動；就緒前的段落不翻譯。
-        infoMessage = "翻譯模型準備中，就緒後譯文才會出現。"
+        // 翻譯準備（含本機模型必要時下載）在背景進行，絕不卡錄音啟動。
+        infoMessage = "翻譯準備中，就緒後譯文才會出現。"
         transcriptTasks.append(
             Task {
                 await coordinator.prepare(source: source, target: target)
@@ -760,6 +767,7 @@ public final class RecordingViewModel {
                     self.infoMessage = "翻譯模型未就緒，本場僅顯示原文。"
                 }
             })
+        return usesCloudTranslation
     }
 
     private func checkDiskSpace() throws {
@@ -848,5 +856,11 @@ public final class RecordingViewModel {
 
     private static var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
+    }
+}
+
+enum RecordingPrivacyPolicy {
+    static func modeAfterCloudTranslation(_ current: PrivacyMode) -> PrivacyMode {
+        current.merging(.textCloudAssist)
     }
 }

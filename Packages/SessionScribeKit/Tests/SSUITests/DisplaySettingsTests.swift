@@ -54,4 +54,10 @@ struct DisplaySettingsTests {
         #expect(InspectorCardTypography.eventContent == .callout)
         #expect(InspectorCardTypography.eventSource == .callout)
     }
+
+    @Test("雲端字幕翻譯會標記文字雲端隱私模式")
+    func cloudTranslationMarksTextCloudPrivacy() {
+        #expect(RecordingPrivacyPolicy.modeAfterCloudTranslation(.localOnly) == .textCloudAssist)
+        #expect(RecordingPrivacyPolicy.modeAfterCloudTranslation(.audioCloudASR) == .textAndAudioCloud)
+    }
 }

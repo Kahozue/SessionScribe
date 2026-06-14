@@ -65,6 +65,23 @@ public actor SessionStore {
         try Data().write(to: url, options: .atomic)
     }
 
+    /// 原子替換整份逐字稿。用於重新轉錄成功後一次換檔，避免轉錄失敗時先刪掉舊稿。
+    public func replaceSegments(_ segments: [TranscriptSegment]) throws {
+        try segmentWriter?.close()
+        segmentWriter = nil
+
+        let url = directory.appending(path: SessionFiles.liveSegments)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var data = Data()
+        for segment in segments {
+            var line = try SSJSON.lineEncoder.encode(segment)
+            line.append(UInt8(ascii: "\n"))
+            data.append(line)
+        }
+        try data.write(to: url, options: .atomic)
+    }
+
     // MARK: - Markers
 
     public func appendMarker(_ marker: Marker) throws {

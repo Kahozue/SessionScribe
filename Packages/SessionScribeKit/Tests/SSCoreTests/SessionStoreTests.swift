@@ -219,4 +219,26 @@ struct SessionStoreTests {
         let after = try await store.loadSegments()
         #expect(after.map(\.segmentID) == ["c"])
     }
+
+    @Test func replaceSegments成功後才覆蓋既有逐字稿() async throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appending(path: "ss-replace-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        let session = Session(
+            sessionID: "s1", title: "t", templateID: "thesis_defense", locale: "zh-TW",
+            appVersion: "0.1.0")
+        let store = try await SessionStore.create(session, in: tmp)
+        func seg(_ id: String, _ start: Double) -> TranscriptSegment {
+            TranscriptSegment(segmentID: id, sessionID: "s1", startSeconds: start,
+                endSeconds: start + 1, text: id, isFinal: true,
+                language: "zh-TW", engine: "mock", model: "m")
+        }
+        try await store.appendSegment(seg("old", 0))
+
+        try await store.replaceSegments([seg("new1", 0), seg("new2", 1)])
+        #expect(try await store.loadSegments().map(\.segmentID) == ["new1", "new2"])
+
+        try await store.appendSegment(seg("after", 2))
+        #expect(try await store.loadSegments().map(\.segmentID) == ["new1", "new2", "after"])
+    }
 }

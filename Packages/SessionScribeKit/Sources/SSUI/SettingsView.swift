@@ -319,7 +319,7 @@ private struct ProviderSlotSection: View {
         settings.providers.first { $0.id == providerID }
     }
     private var templates: [CloudProviderConfig] {
-        sttOnly ? CloudProviderConfig.builtInTemplates.filter { $0.format.supportsSTT }
+        sttOnly ? CloudProviderConfig.builtInAudioTemplates
                 : CloudProviderConfig.builtInTemplates
     }
 
@@ -347,10 +347,17 @@ private struct ProviderSlotSection: View {
                 SecureField("API key", text: $apiKey)
                 HStack {
                     Button("儲存金鑰") { saveKey(account: provider.id) }
-                    Button("測試連線") { testConnection() }
+                    if !sttOnly {
+                        Button("測試連線") { testConnection() }
+                    }
                     if let testResult {
                         Text(testResult).appFont(.caption).foregroundStyle(.secondary)
                     }
+                }
+                if sttOnly {
+                    Text("語音轉文字供應商會在執行離線轉錄時驗證 `/audio/transcriptions` 或 Gemini 音訊輸入。")
+                        .appFont(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 Button("刪除此供應商", role: .destructive) { removeProvider(provider.id) }
                 .onChange(of: settings.providers) { persist() }

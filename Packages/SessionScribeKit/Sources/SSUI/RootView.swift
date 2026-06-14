@@ -709,8 +709,19 @@ public struct RootView: View {
 
     // MARK: - Toolbar
 
-    private var cloudAssistActive: Bool {
-        CloudLLMSettings.load().anyFeatureCloud
+    private var activeCloudPrivacyMode: PrivacyMode {
+        let settings = CloudLLMSettings.load()
+        guard settings.enabled else { return .localOnly }
+        let textCloud = [AssistFeature.summary, .events, .translation]
+            .contains { settings.engine(for: $0) == .cloud }
+        let audioCloud = [AssistFeature.offlineTranscript, .liveASR]
+            .contains { settings.engine(for: $0) == .cloud }
+        switch (textCloud, audioCloud) {
+        case (true, true): return .textAndAudioCloud
+        case (true, false): return .textCloudAssist
+        case (false, true): return .audioCloudASR
+        case (false, false): return .localOnly
+        }
     }
 
     @ToolbarContentBuilder
@@ -728,7 +739,7 @@ public struct RootView: View {
             HStack(spacing: 8) {
                 Text("SessionScribe")
                     .appFont(.headline)
-                PrivacyModeBadge(mode: cloudAssistActive ? .textCloudAssist : .localOnly)
+                PrivacyModeBadge(mode: activeCloudPrivacyMode)
             }
         }
         ToolbarItemGroup {

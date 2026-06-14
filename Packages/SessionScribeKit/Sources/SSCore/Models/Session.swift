@@ -148,4 +148,17 @@ public enum PrivacyMode: String, Codable, Equatable, Sendable {
     case localOnly = "local_only"
     case textCloudAssist = "text_cloud_assist"
     case audioCloudASR = "audio_cloud_asr"
+    case textAndAudioCloud = "text_and_audio_cloud"
+
+    public func merging(_ other: PrivacyMode) -> PrivacyMode {
+        switch (self, other) {
+        case (.localOnly, let mode), (let mode, .localOnly):
+            mode
+        case (.textCloudAssist, .audioCloudASR), (.audioCloudASR, .textCloudAssist),
+             (.textAndAudioCloud, _), (_, .textAndAudioCloud):
+            .textAndAudioCloud
+        case let (mode, _):
+            mode
+        }
+    }
 }

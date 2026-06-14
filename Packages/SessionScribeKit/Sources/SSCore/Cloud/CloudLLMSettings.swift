@@ -29,6 +29,15 @@ public struct CloudProviderConfig: Codable, Equatable, Sendable, Identifiable {
         .init(id: "gemini", format: .gemini, displayName: "Gemini",
               baseURL: "https://generativelanguage.googleapis.com", model: "gemini-2.0-flash"),
     ]
+
+    /// 語音類「新增供應商」用的樣板。OpenAI 相容文字模型（例如 gpt-4o-mini）
+    /// 不能直接用於 /audio/transcriptions，因此語音槽有自己的 STT 預設值。
+    public static let builtInAudioTemplates: [CloudProviderConfig] = [
+        .init(id: "openai-stt", format: .openAICompatible, displayName: "OpenAI",
+              baseURL: "https://api.openai.com/v1", model: "whisper-1"),
+        .init(id: "gemini-stt", format: .gemini, displayName: "Gemini",
+              baseURL: "https://generativelanguage.googleapis.com", model: "gemini-2.0-flash"),
+    ]
 }
 
 public struct CloudLLMSettings: Codable, Equatable, Sendable {
@@ -92,17 +101,19 @@ public struct CloudLLMSettings: Codable, Equatable, Sendable {
             textProviderID = try c.decodeIfPresent(String.self, forKey: .textProviderID)
             audioProviderID = try c.decodeIfPresent(String.self, forKey: .audioProviderID)
         } else {
-            // 舊格式：單一 engine 套用到文字三項與離線轉錄稿，liveASR 維持本機。
+            // 舊格式只代表既有摘要/事件雲端整理。升級時不得自動開啟字幕翻譯或音訊上傳路徑。
             let legacy = try c.decodeIfPresent(AssistEngineKind.self, forKey: .engine) ?? .local
             let legacyProvider = try c.decodeIfPresent(String.self, forKey: .activeProviderID)
             var fe: [String: AssistEngineKind] = [:]
-            for f in [AssistFeature.summary, .events, .translation, .offlineTranscript] {
+            for f in [AssistFeature.summary, .events] {
                 fe[f.rawValue] = legacy
             }
+            fe[AssistFeature.translation.rawValue] = .local
+            fe[AssistFeature.offlineTranscript.rawValue] = .local
             fe[AssistFeature.liveASR.rawValue] = .local
             featureEngines = fe
             textProviderID = legacyProvider
-            audioProviderID = legacyProvider
+            audioProviderID = nil
         }
     }
 

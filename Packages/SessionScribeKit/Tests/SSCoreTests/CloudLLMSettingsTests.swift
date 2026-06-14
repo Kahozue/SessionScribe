@@ -36,11 +36,11 @@ struct CloudLLMSettingsTests {
         #expect(s.enabled)
         #expect(s.engine(for: .summary) == .cloud)
         #expect(s.engine(for: .events) == .cloud)
-        #expect(s.engine(for: .translation) == .cloud)
-        #expect(s.engine(for: .offlineTranscript) == .cloud)
+        #expect(s.engine(for: .translation) == .local)
+        #expect(s.engine(for: .offlineTranscript) == .local)
         #expect(s.engine(for: .liveASR) == .local)
         #expect(s.textProviderID == "p1")
-        #expect(s.audioProviderID == "p1")
+        #expect(s.audioProviderID == nil)
     }
 
     @Test func provider依capability取槽() {
@@ -68,6 +68,13 @@ struct CloudLLMSettingsTests {
         #expect(defaults.map(\.displayName).contains("DeepSeek"))
         #expect(defaults.map(\.displayName).contains("Anthropic"))
         #expect(defaults.map(\.displayName).contains("Gemini"))
+    }
+
+    @Test func 語音供應商樣板只列可直接STT的預設值() {
+        let defaults = CloudProviderConfig.builtInAudioTemplates
+        #expect(defaults.map(\.displayName) == ["OpenAI", "Gemini"])
+        #expect(defaults.first { $0.displayName == "OpenAI" }?.model == "whisper-1")
+        #expect(defaults.allSatisfy { $0.format.supportsSTT })
     }
 
     @Test func feature能力分類正確() {

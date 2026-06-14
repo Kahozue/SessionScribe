@@ -82,6 +82,30 @@ struct SessionTests {
         #expect(decoded == session)
     }
 
+    @Test("同場次可記錄文字與音訊皆曾送雲端")
+    func decodesTextAndAudioCloudPrivacyMode() throws {
+        let json = """
+        {
+          "schema_version": 1,
+          "session_id": "2026-06-15_1000_a3f2",
+          "title": "測試",
+          "template_id": "thesis_defense",
+          "created_at": "2026-06-15T10:00:00+08:00",
+          "started_at": null,
+          "ended_at": null,
+          "locale": "zh-TW",
+          "asr_engine": "cloud",
+          "privacy_mode": "text_and_audio_cloud",
+          "audio_input": "",
+          "recovered": false,
+          "notes": "",
+          "app_version": "0.1.0"
+        }
+        """
+        let session = try SSJSON.decoder.decode(Session.self, from: Data(json.utf8))
+        #expect(session.privacyMode == .textAndAudioCloud)
+    }
+
     @Test("session id 格式為 YYYY-MM-DD_HHmm_xxxx")
     func idMatchesSpecFormat() throws {
         let id = Session.makeID()

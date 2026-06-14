@@ -17,6 +17,13 @@ struct CloudTranslatorTests {
         #expect(out == "Hello")
     }
 
+    @Test func 翻譯解析JSON物件() async throws {
+        let t = CloudTranslator(client: StubClient(reply: #"{"translation":"Hello"}"#),
+            target: Locale.Language(identifier: "en"))
+        let out = try await t.translate("你好")
+        #expect(out == "Hello")
+    }
+
     @Test func 去除前後空白與引號雜訊() async throws {
         let t = CloudTranslator(client: StubClient(reply: "  \"Hello\"  \n"),
             target: Locale.Language(identifier: "en"))

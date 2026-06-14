@@ -50,7 +50,7 @@
 | `ended_at` | ISO-8601 或 null | 正常停止時刻；null 即崩潰殘留候選 |
 | `locale` | String | 如 `zh-TW` |
 | `asr_engine` | String | 本場實際使用的引擎名稱 |
-| `privacy_mode` | String | `local_only`、`text_cloud_assist`、`audio_cloud_asr`；預設 `local_only`。當該 session 跑過雲端整理、雲端摘要或雲端字幕翻譯（文字類雲端）後，如實更新為 `text_cloud_assist`。當該 session 的離線轉錄稿走雲端 STT 成功後（規格 1.4），如實更新為 `audio_cloud_asr` |
+| `privacy_mode` | String | `local_only`、`text_cloud_assist`、`audio_cloud_asr`、`text_and_audio_cloud`；預設 `local_only`。當該 session 跑過雲端整理、雲端摘要或雲端字幕翻譯（文字類雲端）後，如實更新為 `text_cloud_assist`。當該 session 的離線轉錄稿走雲端 STT 成功後（規格 1.4），如實更新為 `audio_cloud_asr`。同一 session 若文字與音訊都曾送雲端，更新為 `text_and_audio_cloud` |
 | `audio_input` | String | 輸入裝置名稱 |
 | `recovered` | Bool | 曾經崩潰恢復 |
 | `notes` | String | 使用者備註 |
@@ -229,8 +229,8 @@ v0.2 有三種產生與更新路徑：
   讀取輔助：`engine(for:)`（查 `featureEngines`，預設 `local`）、`setEngine(_:for:)`、`providerID(for:)`（依 `feature.capability` 回傳 `textProviderID` 或 `audioProviderID`）、`provider(for:)`（解析為對應 `CloudProviderConfig`）、`anyFeatureCloud`（總開關開且至少一項 feature 為雲端，供主畫面狀態標使用）。
 
 - **舊格式自動遷移**：v0.3 的舊格式為單一 `enabled` + `engine`（`local`／`cloud`）+ `providers` + `activeProviderID`。解碼時若找不到 `featureEngines` 鍵，視為舊格式並自動遷移：
-  - 舊 `engine` 套用到 `summary`、`events`、`translation`、`offlineTranscript` 四個 feature；`liveASR` 一律設為 `local`。
-  - 舊 `activeProviderID` 同時填入 `textProviderID` 與 `audioProviderID`。
+  - 舊 `engine` 只套用到既有文字整理 `summary`、`events`；`translation`、`offlineTranscript` 與 `liveASR` 一律設為 `local`，避免升級時開啟使用者未曾明確選擇的字幕翻譯或音訊雲端路徑。
+  - 舊 `activeProviderID` 填入 `textProviderID`；`audioProviderID` 維持 null，需使用者明確選擇語音類供應商。
   - `enabled`、`providers` 直接沿用。
 
   遷移只在解碼時於記憶體中發生；下次 `save()` 會以新格式（含 `featureEngines`/`textProviderID`/`audioProviderID`）覆寫，不留舊鍵。
@@ -238,4 +238,5 @@ v0.2 有三種產生與更新路徑：
 - **API key**：存系統 Keychain（`kSecClassGenericPassword`），service 為 `com.sessionscribe.cloud-llm`，account 為供應商設定的 `id`。文字類與語音類兩槽若指向同一供應商 id，共用同一筆 Keychain 項目。不寫入 UserDefaults、不寫入任何檔案、不支援環境變數讀取。
 - **雲端產物**：雲端整理產生的 events 與摘要沿用既有 `events.json`／`transcript_summary.json` 結構與落盤路徑，與本機產物同結構、同 `needs_review` 規則（事件 `needs_review: true`）。雲端離線轉錄稿產生的 `TranscriptSegment` 與本機產物同結構，`engine` 欄位為 `"cloud"`。
 - **隱私旗標鏡像**：`DisplaySettings.cloudAssistEnabledKey`（`cloudAssistEnabledMirror`）僅供 UI 觀察用，實際讀寫一律走 `CloudLLMSettings.load()`／`save()`。
-- **`audioCloudASR` 隱私模式**：當某 session 的離線轉錄稿（規格 1.4）以雲端 STT 成功完成（首次轉寫或重新轉錄皆適用），該 session 的 `privacy_mode` 會被標為 `audio_cloud_asr`（見第三節 metadata.json）。
+- **語音類供應商樣板**：語音槽的「新增供應商」使用語音專用樣板。OpenAI 預設 model 為 `whisper-1`，避免把文字用 `gpt-4o-mini` 送到 `/audio/transcriptions`。
+- **雲端隱私模式**：當某 session 的離線轉錄稿（規格 1.4）以雲端 STT 成功完成（首次轉寫或重新轉錄皆適用），該 session 的 `privacy_mode` 會被標為 `audio_cloud_asr`；文字類雲端成功則標為 `text_cloud_assist`；同一 session 兩者都發生過則標為 `text_and_audio_cloud`（見第三節 metadata.json）。

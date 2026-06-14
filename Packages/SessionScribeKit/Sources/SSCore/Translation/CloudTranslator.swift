@@ -21,10 +21,20 @@ public final class CloudTranslator: LiveTranslator, @unchecked Sendable {
         let targetName = target.languageCode?.identifier ?? "en"
         let system = """
             你是翻譯引擎。把使用者文字翻成目標語言（BCP-47：\(targetName)）。
-            只輸出譯文本身，不要加引號、說明或原文。
+            只輸出 JSON 物件 {"translation":"譯文"}，不要加說明或原文。
             """
         let reply = try await client.complete(system: system, user: text)
-        return Self.stripWrapping(reply.trimmingCharacters(in: .whitespacesAndNewlines))
+        return try Self.parseTranslation(reply)
+    }
+
+    static func parseTranslation(_ reply: String) throws -> String {
+        let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let json = try? JSONExtraction.firstJSONValue(in: trimmed),
+           let data = json.data(using: .utf8),
+           let object = try? JSONDecoder().decode(TranslationJSON.self, from: data) {
+            return stripWrapping(object.translation.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return stripWrapping(trimmed)
     }
 
     /// 模型偶爾無視指示用引號包住整句譯文，去掉前後成對的引號（直引號與「」）。
@@ -37,4 +47,6 @@ public final class CloudTranslator: LiveTranslator, @unchecked Sendable {
         }
         return text
     }
+
+    private struct TranslationJSON: Decodable { let translation: String }
 }
