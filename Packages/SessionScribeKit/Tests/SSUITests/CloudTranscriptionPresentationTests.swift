@@ -15,10 +15,9 @@ struct CloudTranscriptionPresentationTests {
         settings.audioProviderID = "audio"
         settings.setEngine(.cloud, for: .offlineTranscript)
 
-        let keychain = InMemoryKeychainStore()
-        try keychain.setSecret("sk-test", account: "audio")
-
-        #expect(TranscriptionRoutePresentation.usesCloud(settings: settings, keychain: keychain))
+        let keychain = ReadCountingKeychainStore()
+        #expect(TranscriptionRoutePresentation.usesCloud(settings: settings))
+        #expect(keychain.secretReadCount == 0)
         #expect(TranscriptionRoutePresentation.actionTitle(usesCloud: true) == "雲端轉寫這段音訊")
         #expect(TranscriptionRoutePresentation.progressTitle(usesCloud: true, progress: 0.42) == "雲端轉寫中 42%")
     }
@@ -27,4 +26,23 @@ struct CloudTranscriptionPresentationTests {
         let message = UIErrorMessage.describe(CloudLLMError.http(status: 401, body: ""))
         #expect(message == "API key 無效或未授權（401）。")
     }
+}
+
+private final class ReadCountingKeychainStore: KeychainStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var reads = 0
+
+    var secretReadCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return reads
+    }
+
+    func secret(account _: String) throws -> String? {
+        lock.lock(); defer { lock.unlock() }
+        reads += 1
+        return nil
+    }
+
+    func setSecret(_: String, account _: String) throws {}
+    func deleteSecret(account _: String) throws {}
 }

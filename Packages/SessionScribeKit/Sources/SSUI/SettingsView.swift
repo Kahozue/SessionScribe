@@ -327,7 +327,12 @@ private struct ProviderSlotSection: View {
         Section(title) {
             Picker("使用", selection: Binding(
                 get: { providerID ?? "" },
-                set: { providerID = $0.isEmpty ? nil : $0; loadKey(); persist() })) {
+                set: {
+                    providerID = $0.isEmpty ? nil : $0
+                    apiKey = ""
+                    testResult = nil
+                    persist()
+                })) {
                 Text("未選擇").tag("")
                 ForEach(visibleProviders) { p in Text(p.displayName).tag(p.id) }
             }
@@ -344,9 +349,10 @@ private struct ProviderSlotSection: View {
                 }
                 TextField("Base URL", text: $settings.providers[index].baseURL)
                 TextField("Model", text: $settings.providers[index].model)
-                SecureField("API key", text: $apiKey)
+                SecureField("API key（留空則保留已儲存金鑰）", text: $apiKey)
                 HStack {
                     Button("儲存金鑰") { saveKey(account: provider.id) }
+                    Button("從系統匯入") { loadKey(account: provider.id) }
                     if !sttOnly {
                         Button("測試連線") { testConnection() }
                     }
@@ -363,7 +369,6 @@ private struct ProviderSlotSection: View {
                 .onChange(of: settings.providers) { persist() }
             }
         }
-        .onAppear { loadKey() }
     }
 
     private func persist() { settings.save() }
@@ -383,23 +388,43 @@ private struct ProviderSlotSection: View {
         if settings.textProviderID == id { settings.textProviderID = nil }
         if settings.audioProviderID == id { settings.audioProviderID = nil }
         try? keychain.deleteSecret(account: id)
-        loadKey()
+        apiKey = ""
+        testResult = nil
         persist()
     }
 
-    private func loadKey() {
-        apiKey = (try? keychain.secret(account: providerID ?? "")) ?? ""
+    private func loadKey(account: String) {
+        apiKey = (try? keychain.secret(account: account)) ?? ""
+        testResult = apiKey.isEmpty ? "沒有已儲存金鑰" : "已匯入"
     }
 
     private func saveKey(account: String) {
-        try? keychain.setSecret(apiKey, account: account)
-        testResult = "已儲存"
+        guard !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            testResult = "未輸入金鑰"
+            return
+        }
+        do {
+            try keychain.setSecret(apiKey, account: account)
+            testResult = "已儲存"
+        } catch let error as CloudLLMError {
+            testResult = error.userMessage
+        } catch {
+            testResult = "儲存失敗"
+        }
     }
 
     private func testConnection() {
         guard let provider = active else { return }
-        try? keychain.setSecret(apiKey, account: provider.id)
-        guard let client = AssistResolver.makeClient(provider: provider, key: apiKey) else {
+        let typedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key: String
+        if typedKey.isEmpty {
+            testResult = "請先輸入或從系統匯入金鑰"
+            return
+        } else {
+            key = apiKey
+            try? keychain.setSecret(apiKey, account: provider.id)
+        }
+        guard let client = AssistResolver.makeClient(provider: provider, key: key) else {
             testResult = "設定不完整"; return
         }
         testResult = "測試中…"

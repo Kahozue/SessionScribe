@@ -11,8 +11,15 @@ enum UIErrorMessage {
 }
 
 enum TranscriptionRoutePresentation {
-    static func usesCloud(settings: CloudLLMSettings, keychain: KeychainStore) -> Bool {
-        AssistResolver.sttClient(settings: settings, keychain: keychain) != nil
+    static func usesCloud(settings: CloudLLMSettings) -> Bool {
+        guard settings.enabled,
+              settings.engine(for: .offlineTranscript) == .cloud,
+              let provider = settings.provider(for: .offlineTranscript),
+              provider.format.supportsSTT,
+              URL(string: provider.baseURL) != nil else {
+            return false
+        }
+        return true
     }
 
     static func actionTitle(usesCloud: Bool) -> String {
@@ -34,5 +41,18 @@ enum TranscriptionRoutePresentation {
 
     static func failureTitle(usesCloud: Bool) -> String {
         usesCloud ? "雲端轉寫失敗" : "離線轉寫失敗"
+    }
+}
+
+enum CloudAssistPresentation {
+    static func usesCloud(settings: CloudLLMSettings, feature: AssistFeature) -> Bool {
+        guard feature.capability == .text,
+              settings.enabled,
+              settings.engine(for: feature) == .cloud,
+              let provider = settings.provider(for: feature),
+              URL(string: provider.baseURL) != nil else {
+            return false
+        }
+        return true
     }
 }

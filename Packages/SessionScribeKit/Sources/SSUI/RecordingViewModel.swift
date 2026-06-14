@@ -613,8 +613,7 @@ public final class RecordingViewModel {
     public var pendingTranscriptionActionTitle: String {
         TranscriptionRoutePresentation.importActionTitle(
             usesCloud: TranscriptionRoutePresentation.usesCloud(
-                settings: CloudLLMSettings.load(),
-                keychain: keychain))
+                settings: CloudLLMSettings.load()))
     }
 
     /// 對匯入的 session 做音訊轉寫（背景執行，完成後提示）。轉錄稿設定為雲端且 key 齊備時走雲端。
@@ -623,7 +622,7 @@ public final class RecordingViewModel {
             let store = SessionStore(directory: library.directory(for: session.sessionID))
             let settings = CloudLLMSettings.load()
             let usesCloud = TranscriptionRoutePresentation.usesCloud(
-                settings: settings, keychain: keychain)
+                settings: settings)
             do {
                 if usesCloud,
                    let client = AssistResolver.sttClient(settings: settings, keychain: keychain),

@@ -44,15 +44,15 @@ final class SessionDetailViewModel {
     }
 
     private var usingCloudSummary: Bool {
-        AssistResolver.client(settings: cloudSettings, keychain: keychain, feature: .summary) != nil
+        CloudAssistPresentation.usesCloud(settings: cloudSettings, feature: .summary)
     }
 
     private var usingCloudEvents: Bool {
-        AssistResolver.client(settings: cloudSettings, keychain: keychain, feature: .events) != nil
+        CloudAssistPresentation.usesCloud(settings: cloudSettings, feature: .events)
     }
 
     private var usingCloudTranscription: Bool {
-        TranscriptionRoutePresentation.usesCloud(settings: cloudSettings, keychain: keychain)
+        TranscriptionRoutePresentation.usesCloud(settings: cloudSettings)
     }
 
     /// 文字整理（摘要/事件）目前是否任一走雲端，供狀態顯示沿用。
@@ -170,10 +170,12 @@ final class SessionDetailViewModel {
         Task {
             defer { summarizing = false }
             do {
-                summary = try await resolvedSummarizer.summarize(
+                let summarizer = resolvedSummarizer
+                let usedCloud = summarizer is CloudTranscriptSummarizer
+                summary = try await summarizer.summarize(
                     from: segs, sessionID: sessionID, locale: locale)
                 persistSummary()
-                await markTextCloudAssistIfNeeded(for: .summary)
+                if usedCloud { await markTextCloudAssistIfNeeded() }
             } catch {
                 errorMessage = "AI 產生摘要失敗：\(UIErrorMessage.describe(error))"
             }
@@ -201,12 +203,13 @@ final class SessionDetailViewModel {
             defer { organizing = false }
             do {
                 let organizer = resolvedOrganizer
+                let usedCloud = organizer is CloudEventOrganizer
                 let organized = try await organizer.organize(current, locale: locale) { progress in
                     Task { @MainActor in self.organizeProgress = progress }
                 }
                 events = organized
                 persistEvents()
-                await markTextCloudAssistIfNeeded(for: .events)
+                if usedCloud { await markTextCloudAssistIfNeeded() }
             } catch {
                 errorMessage = "AI 整理失敗：\(UIErrorMessage.describe(error))"
             }
@@ -224,10 +227,12 @@ final class SessionDetailViewModel {
         Task {
             defer { organizing = false }
             do {
-                events = try await resolvedOrganizer.generateEvents(
+                let organizer = resolvedOrganizer
+                let usedCloud = organizer is CloudEventOrganizer
+                events = try await organizer.generateEvents(
                     from: segs, sessionID: sessionID, locale: locale)
                 persistEvents()
-                await markTextCloudAssistIfNeeded(for: .events)
+                if usedCloud { await markTextCloudAssistIfNeeded() }
             } catch {
                 errorMessage = "AI 產生草稿失敗：\(UIErrorMessage.describe(error))"
             }
@@ -250,9 +255,8 @@ final class SessionDetailViewModel {
     }
 
     /// 跑雲端整理/摘要成功後，如實把該 session 的 privacyMode 記為 textCloudAssist。
-    private func markTextCloudAssistIfNeeded(for feature: AssistFeature) async {
-        guard AssistResolver.client(settings: cloudSettings, keychain: keychain, feature: feature) != nil,
-              var current = session else { return }
+    private func markTextCloudAssistIfNeeded() async {
+        guard var current = session else { return }
         let nextMode = current.privacyMode.merging(.textCloudAssist)
         guard current.privacyMode != nextMode else { return }
         current.privacyMode = nextMode
