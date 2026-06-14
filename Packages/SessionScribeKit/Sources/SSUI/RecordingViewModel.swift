@@ -714,7 +714,9 @@ public final class RecordingViewModel {
             })
     }
 
-    /// 備妥本場即時翻譯（規格 1.2 Phase 3）：翻譯關閉、來源＝目標、或非 26.4 皆略過。
+    /// 備妥本場即時翻譯（規格 1.2 Phase 3）：翻譯關閉或來源＝目標皆略過。
+    /// 依設定挑 translator：已設定雲端文字供應商則走 CloudTranslator，否則走本地
+    /// AppleTranslator（需 macOS 26.4 以上，否則本場僅顯示原文）。
     /// prepare（含必要時下載模型）在錄音前完成；失敗則本場僅顯示原文，不影響轉寫錄音。
     private func setUpTranslation(recognitionCode: String) async {
         translationCoordinator = nil
@@ -725,11 +727,22 @@ public final class RecordingViewModel {
             UserDefaults.standard.string(forKey: DisplaySettings.translationTargetKey)
             ?? CaptionLanguage.zhTW.code
         guard targetCode != recognitionCode else { return }
-        guard #available(macOS 26.4, *) else {
-            infoMessage = "即時翻譯需要 macOS 26.4 以上，本場僅顯示原文。"
-            return
+        let source = CaptionLanguage.from(code: recognitionCode).language
+        let target = CaptionLanguage.from(code: targetCode).language
+        let cloudSettings = CloudLLMSettings.load()
+        let keychain: KeychainStore = SystemKeychainStore()
+        let translator: any LiveTranslator
+        if let client = AssistResolver.client(
+            settings: cloudSettings, keychain: keychain, feature: .translation) {
+            translator = CloudTranslator(client: client, target: target)
+        } else {
+            guard #available(macOS 26.4, *) else {
+                infoMessage = "即時翻譯需要 macOS 26.4 以上，本場僅顯示原文。"
+                return
+            }
+            translator = AppleTranslator()
         }
-        let coordinator = TranslationCoordinator(translator: AppleTranslator())
+        let coordinator = TranslationCoordinator(translator: translator)
         translationCoordinator = coordinator
         let updates = await coordinator.updates()
         transcriptTasks.append(
@@ -740,8 +753,6 @@ public final class RecordingViewModel {
             })
         // 模型準備（含必要時下載）在背景進行，絕不卡錄音啟動；就緒前的段落不翻譯。
         infoMessage = "翻譯模型準備中，就緒後譯文才會出現。"
-        let source = CaptionLanguage.from(code: recognitionCode).language
-        let target = CaptionLanguage.from(code: targetCode).language
         transcriptTasks.append(
             Task {
                 await coordinator.prepare(source: source, target: target)
