@@ -236,6 +236,18 @@ final class SessionDetailViewModel {
         }
     }
 
+    /// 雲端離線轉寫成功後，把該 session 的 privacyMode 記為 audioCloudASR。
+    private func markAudioCloudIfNeeded() async {
+        guard var current = session, current.privacyMode != .audioCloudASR else { return }
+        current.privacyMode = .audioCloudASR
+        do {
+            try await store.saveMetadata(current)
+            session = current
+        } catch {
+            errorMessage = "更新隱私模式失敗：\(error.localizedDescription)"
+        }
+    }
+
     /// 點標題改名：metadata 即時落盤。
     func rename(to title: String) {
         let trimmed = title.trimmingCharacters(in: .whitespaces)
@@ -274,6 +286,27 @@ final class SessionDetailViewModel {
                 return
             }
         }
+        // 雲端離線轉寫（規格 1.4）：轉錄稿選雲端且供應商與 key 齊備時走雲端，否則本地。
+        let cloudSettings = CloudLLMSettings.load()
+        if let sttClient = AssistResolver.sttClient(settings: cloudSettings, keychain: keychain),
+           let audioModel = cloudSettings.provider(for: .offlineTranscript)?.model {
+            let config = (try? LibraryConfigFile.read(from: directory.deletingLastPathComponent()))
+                ?? LibraryConfig()
+            do {
+                try await CloudTranscriber.transcribe(
+                    sessionDirectory: directory, session: session, client: sttClient,
+                    store: store, model: audioModel, lexicon: config.lexicon
+                ) { progress in
+                    Task { @MainActor in self.transcribeProgress = progress }
+                }
+                segments = try await store.loadSegments()
+                await markAudioCloudIfNeeded()
+            } catch {
+                errorMessage = "雲端轉寫失敗：\(error.localizedDescription)"
+            }
+            return
+        }
+
         let useMock = UserDefaults.standard.bool(forKey: DisplaySettings.useMockEngineKey)
         guard
             let engine = await EngineSelector.selectAndPrepare(
