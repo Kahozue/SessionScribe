@@ -114,6 +114,7 @@ public final class RecordingViewModel {
     private var translationCoordinator: TranslationCoordinator?
     private var markerService: MarkerService?
     private var store: SessionStore?
+    private let keychain: KeychainStore = SystemKeychainStore()
     private var levelTask: Task<Void, Never>?
     private var clockTask: Task<Void, Never>?
     private var transcriptTasks: [Task<Void, Never>] = []
@@ -609,10 +610,44 @@ public final class RecordingViewModel {
         }
     }
 
-    /// 對匯入的 session 做離線轉寫（背景執行，完成後提示）。
+    public var pendingTranscriptionActionTitle: String {
+        TranscriptionRoutePresentation.importActionTitle(
+            usesCloud: TranscriptionRoutePresentation.usesCloud(
+                settings: CloudLLMSettings.load(),
+                keychain: keychain))
+    }
+
+    /// 對匯入的 session 做音訊轉寫（背景執行，完成後提示）。轉錄稿設定為雲端且 key 齊備時走雲端。
     public func transcribeImported(_ session: Session) {
         Task {
             let store = SessionStore(directory: library.directory(for: session.sessionID))
+            let settings = CloudLLMSettings.load()
+            let usesCloud = TranscriptionRoutePresentation.usesCloud(
+                settings: settings, keychain: keychain)
+            do {
+                if usesCloud,
+                   let client = AssistResolver.sttClient(settings: settings, keychain: keychain),
+                   let model = settings.provider(for: .offlineTranscript)?.model {
+                    try await CloudTranscriber.transcribe(
+                        sessionDirectory: store.directory,
+                        session: session,
+                        client: client,
+                        store: store,
+                        model: model,
+                        lexicon: libraryConfig.lexicon)
+                    let count = (try? await store.loadSegments())?.count ?? 0
+                    var updated = session
+                    updated.privacyMode = updated.privacyMode.merging(.audioCloudASR)
+                    try await store.saveMetadata(updated)
+                    sessions = try library.sessions()
+                    infoMessage = "\(TranscriptionRoutePresentation.completionTitle(usesCloud: true))：\(session.title)，共 \(count) 段。"
+                    return
+                }
+            } catch {
+                errorMessage = "\(TranscriptionRoutePresentation.failureTitle(usesCloud: true))：\(UIErrorMessage.describe(error))"
+                return
+            }
+
             let useMock = UserDefaults.standard.bool(forKey: DisplaySettings.useMockEngineKey)
             guard
                 let engine = await EngineSelector.selectAndPrepare(
@@ -629,9 +664,9 @@ public final class RecordingViewModel {
                     sessionDirectory: store.directory, session: session,
                     coordinator: coordinator)
                 let count = (try? await store.loadSegments())?.count ?? 0
-                infoMessage = "離線轉寫完成：\(session.title)，共 \(count) 段。"
+                infoMessage = "\(TranscriptionRoutePresentation.completionTitle(usesCloud: false))：\(session.title)，共 \(count) 段。"
             } catch {
-                errorMessage = "離線轉寫失敗：\(error.localizedDescription)"
+                errorMessage = "\(TranscriptionRoutePresentation.failureTitle(usesCloud: false))：\(UIErrorMessage.describe(error))"
             }
         }
     }

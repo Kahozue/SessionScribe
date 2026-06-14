@@ -42,10 +42,31 @@ public enum CloudLLMError: Error, Sendable, Equatable {
         case .missingAPIKey: "尚未設定 API key。"
         case .http(let status, _) where status == 401: "API key 無效或未授權（401）。"
         case .http(let status, _) where status == 429: "雲端服務忙線或額度受限（429），請稍後再試。"
-        case .http(let status, _): "雲端服務回應錯誤（\(status)）。"
+        case .http(let status, let body):
+            if let detail = Self.serverMessage(from: body) {
+                "雲端服務回應錯誤（\(status)）：\(detail)"
+            } else {
+                "雲端服務回應錯誤（\(status)）。"
+            }
         case .malformedResponse: "雲端回應格式無法解析。"
         case .transport(let detail): "連線失敗：\(detail)"
         }
+    }
+
+    private static func serverMessage(from body: String) -> String? {
+        guard let data = body.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : String(trimmed.prefix(240))
+        }
+        if let error = object["error"] as? [String: Any],
+           let message = error["message"] as? String {
+            return message
+        }
+        if let message = object["message"] as? String {
+            return message
+        }
+        return nil
     }
 }
 

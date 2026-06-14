@@ -77,6 +77,18 @@ struct CloudLLMSettingsTests {
         #expect(defaults.allSatisfy { $0.format.supportsSTT })
     }
 
+    @Test func 舊OpenAISTT預設模型遷移到diarize() throws {
+        let stored = """
+        {"enabled":true,
+         "providers":[{"id":"openai-stt-abc123","format":"openai_compatible","displayName":"OpenAI",
+         "baseURL":"https://api.openai.com/v1","model":"whisper-1"}],
+         "featureEngines":{"offlineTranscript":"cloud"},
+         "audioProviderID":"openai-stt-abc123"}
+        """
+        let s = try JSONDecoder().decode(CloudLLMSettings.self, from: Data(stored.utf8))
+        #expect(s.provider(for: .offlineTranscript)?.model == "gpt-4o-transcribe-diarize")
+    }
+
     @Test func feature能力分類正確() {
         #expect(AssistFeature.offlineTranscript.capability == .audio)
         #expect(AssistFeature.liveASR.capability == .audio)

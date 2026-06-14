@@ -4,7 +4,15 @@ import Foundation
 /// 結果對應為 TranscriptSegment 落盤。時間以整段音訊起點為基準。
 public enum CloudTranscriber {
 
-    public enum TranscribeError: Error { case noAudio }
+    public enum TranscribeError: LocalizedError {
+        case noAudio
+
+        public var errorDescription: String? {
+            switch self {
+            case .noAudio: "這個 session 沒有可轉寫的音訊。"
+            }
+        }
+    }
 
     /// 純對應：STT 分段 → TranscriptSegment。
     public static func makeSegments(from stt: [CloudSTTSegment], sessionID: String,

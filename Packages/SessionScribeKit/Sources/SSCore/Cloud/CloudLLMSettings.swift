@@ -6,6 +6,8 @@ public enum AssistEngineKind: String, Codable, Sendable, CaseIterable {
 
 /// 單一供應商設定（不含 API key；key 存 Keychain，以 id 為 account）。
 public struct CloudProviderConfig: Codable, Equatable, Sendable, Identifiable {
+    public static let defaultOpenAISTTModel = "gpt-4o-transcribe-diarize"
+
     public var id: String
     public var format: CloudProviderFormat
     public var displayName: String
@@ -34,7 +36,7 @@ public struct CloudProviderConfig: Codable, Equatable, Sendable, Identifiable {
     /// 不能直接用於 /audio/transcriptions，因此語音槽有自己的 STT 預設值。
     public static let builtInAudioTemplates: [CloudProviderConfig] = [
         .init(id: "openai-stt", format: .openAICompatible, displayName: "OpenAI",
-              baseURL: "https://api.openai.com/v1", model: "gpt-4o-transcribe-diarize"),
+              baseURL: "https://api.openai.com/v1", model: defaultOpenAISTTModel),
         .init(id: "gemini-stt", format: .gemini, displayName: "Gemini",
               baseURL: "https://generativelanguage.googleapis.com", model: "gemini-2.0-flash"),
     ]
@@ -115,6 +117,8 @@ public struct CloudLLMSettings: Codable, Equatable, Sendable {
             textProviderID = legacyProvider
             audioProviderID = nil
         }
+        providers = Self.migratingProviderDefaults(
+            providers, audioProviderID: audioProviderID)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -140,5 +144,34 @@ public struct CloudLLMSettings: Codable, Equatable, Sendable {
     public func save(to defaults: UserDefaults = .standard) {
         guard let data = try? JSONEncoder().encode(self) else { return }
         defaults.set(data, forKey: Self.defaultsKey)
+    }
+
+    private static func migratingProviderDefaults(
+        _ providers: [CloudProviderConfig],
+        audioProviderID: String?
+    ) -> [CloudProviderConfig] {
+        providers.map { provider in
+            guard shouldMigrateOpenAISTTDefault(provider, audioProviderID: audioProviderID) else {
+                return provider
+            }
+            var migrated = provider
+            migrated.model = CloudProviderConfig.defaultOpenAISTTModel
+            return migrated
+        }
+    }
+
+    private static func shouldMigrateOpenAISTTDefault(
+        _ provider: CloudProviderConfig,
+        audioProviderID: String?
+    ) -> Bool {
+        guard provider.format == .openAICompatible,
+              provider.model == "whisper-1",
+              provider.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                == "https://api.openai.com/v1" else {
+            return false
+        }
+        return provider.id.hasPrefix("openai-stt")
+            || provider.displayName == "OpenAI"
+            || provider.id == audioProviderID
     }
 }

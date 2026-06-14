@@ -51,9 +51,23 @@ final class SessionDetailViewModel {
         AssistResolver.client(settings: cloudSettings, keychain: keychain, feature: .events) != nil
     }
 
+    private var usingCloudTranscription: Bool {
+        TranscriptionRoutePresentation.usesCloud(settings: cloudSettings, keychain: keychain)
+    }
+
     /// 文字整理（摘要/事件）目前是否任一走雲端，供狀態顯示沿用。
     var usingCloudAssist: Bool {
         usingCloudSummary || usingCloudEvents
+    }
+
+    var transcriptionActionTitle: String {
+        TranscriptionRoutePresentation.actionTitle(usesCloud: usingCloudTranscription)
+    }
+
+    var transcriptionProgressTitle: String {
+        TranscriptionRoutePresentation.progressTitle(
+            usesCloud: usingCloudTranscription,
+            progress: transcribeProgress)
     }
 
     func load() async {
@@ -161,7 +175,7 @@ final class SessionDetailViewModel {
                 persistSummary()
                 await markTextCloudAssistIfNeeded(for: .summary)
             } catch {
-                errorMessage = "AI 產生摘要失敗：\(error.localizedDescription)"
+                errorMessage = "AI 產生摘要失敗：\(UIErrorMessage.describe(error))"
             }
         }
     }
@@ -194,7 +208,7 @@ final class SessionDetailViewModel {
                 persistEvents()
                 await markTextCloudAssistIfNeeded(for: .events)
             } catch {
-                errorMessage = "AI 整理失敗：\(error.localizedDescription)"
+                errorMessage = "AI 整理失敗：\(UIErrorMessage.describe(error))"
             }
         }
     }
@@ -215,7 +229,7 @@ final class SessionDetailViewModel {
                 persistEvents()
                 await markTextCloudAssistIfNeeded(for: .events)
             } catch {
-                errorMessage = "AI 產生草稿失敗：\(error.localizedDescription)"
+                errorMessage = "AI 產生草稿失敗：\(UIErrorMessage.describe(error))"
             }
         }
     }
@@ -309,7 +323,9 @@ final class SessionDetailViewModel {
             segments = result.segments
             if result.usedAudioCloud { await markAudioCloudIfNeeded() }
         } catch {
-            errorMessage = "轉寫失敗：\(error.localizedDescription)"
+            let title = TranscriptionRoutePresentation.failureTitle(
+                usesCloud: usingCloudTranscription)
+            errorMessage = "\(title)：\(UIErrorMessage.describe(error))"
         }
     }
 
@@ -932,11 +948,11 @@ public struct SessionDetailView: View {
         } actions: {
             if model.transcribing {
                 ProgressView(value: model.transcribeProgress) {
-                    Text("離線轉寫中 \(Int(model.transcribeProgress * 100))%")
+                    Text(model.transcriptionProgressTitle)
                 }
                 .frame(width: 220)
             } else if model.player != nil {
-                Button("離線轉寫這段音訊") {
+                Button(model.transcriptionActionTitle) {
                     Task { await model.transcribe() }
                 }
                 .buttonStyle(.borderedProminent)

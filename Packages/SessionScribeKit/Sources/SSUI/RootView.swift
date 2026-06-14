@@ -131,7 +131,7 @@ public struct RootView: View {
                 set: { if !$0 { model.pendingTranscription = nil } }),
             titleVisibility: .visible
         ) {
-            Button("立即離線轉寫") {
+            Button(model.pendingTranscriptionActionTitle) {
                 if let session = model.pendingTranscription {
                     model.transcribeImported(session)
                     sidebarSelection = [session.sessionID]
