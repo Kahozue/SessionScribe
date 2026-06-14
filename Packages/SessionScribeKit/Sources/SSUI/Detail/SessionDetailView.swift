@@ -325,6 +325,7 @@ public struct SessionDetailView: View {
     @State private var summaryExpanded = true
     @State private var eventsExpanded = true
     @State private var markersExpanded = true
+    @State private var showReTranscribeConfirm = false
     @FocusState private var titleFieldFocused: Bool
     @AppStorage(DisplaySettings.transcriptModeKey)
     private var transcriptMode = DisplaySettings.lyricsMode
@@ -404,6 +405,18 @@ public struct SessionDetailView: View {
             Button("知道了", role: .cancel) {}
         } message: {
             Text(model.errorMessage ?? "")
+        }
+        .confirmationDialog(
+            "重新轉錄這段音訊？",
+            isPresented: $showReTranscribeConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("重新轉錄", role: .destructive) {
+                Task { await model.transcribe(reset: true) }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("會以目前的辨識語言與名詞表重新產生逐字稿並覆蓋現有逐字稿。既有的摘要、結構化事件與譯文不會自動更新，可能與新稿不符，需要時請自行重新產生。")
         }
     }
 
@@ -760,9 +773,26 @@ public struct SessionDetailView: View {
                 Spacer()
                 displayModeToggle
             }
-            Text("\(session.locale)　分段：\(model.segments.count)　標記：\(model.markers.count)")
-                .appFont(.callout)
-                .foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                Text("\(session.locale)　分段：\(model.segments.count)　標記：\(model.markers.count)")
+                    .appFont(.callout)
+                    .foregroundStyle(.secondary)
+                if !model.segments.isEmpty && model.player != nil {
+                    if model.transcribing {
+                        ProgressView(value: model.transcribeProgress)
+                            .frame(width: 90)
+                    } else {
+                        Button {
+                            showReTranscribeConfirm = true
+                        } label: {
+                            Label("重新轉錄", systemImage: "arrow.clockwise")
+                                .appFont(.callout)
+                        }
+                        .buttonStyle(.borderless)
+                        .help("以目前辨識語言與名詞表重新產生逐字稿，覆蓋現有逐字稿")
+                    }
+                }
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
