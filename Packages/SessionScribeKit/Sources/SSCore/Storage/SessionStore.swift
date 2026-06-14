@@ -54,6 +54,17 @@ public actor SessionStore {
             TranscriptSegment.self, from: directory.appending(path: SessionFiles.liveSegments))
     }
 
+    /// 清空逐字稿檔，用於重新轉錄前丟棄舊段落。關閉 append handle，
+    /// 後續 appendSegment 會重新開啟目前檔案，避免寫到已被替換的舊 inode。
+    public func resetSegments() throws {
+        try segmentWriter?.close()
+        segmentWriter = nil
+        let url = directory.appending(path: SessionFiles.liveSegments)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data().write(to: url, options: .atomic)
+    }
+
     // MARK: - Markers
 
     public func appendMarker(_ marker: Marker) throws {

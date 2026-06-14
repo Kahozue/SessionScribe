@@ -194,4 +194,29 @@ struct SessionStoreTests {
         let loaded = try await second.loadMarkers()
         #expect(loaded.map(\.markerID) == ["m_0001", "m_0002"])
     }
+
+    @Test func resetSegments後重寫不重複() async throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appending(path: "ss-reset-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        let session = Session(
+            sessionID: "s1", title: "t", templateID: "thesis_defense", locale: "zh-TW",
+            appVersion: "0.1.0")
+        let store = try await SessionStore.create(session, in: tmp)
+        func seg(_ id: String, _ start: Double) -> TranscriptSegment {
+            TranscriptSegment(segmentID: id, sessionID: "s1", startSeconds: start,
+                endSeconds: start + 1, text: "x", isFinal: true,
+                language: "zh-TW", engine: "mock", model: "m")
+        }
+        try await store.appendSegment(seg("a", 0))
+        try await store.appendSegment(seg("b", 1))
+        #expect(try await store.loadSegments().count == 2)
+
+        try await store.resetSegments()
+        #expect(try await store.loadSegments().isEmpty)
+
+        try await store.appendSegment(seg("c", 0))
+        let after = try await store.loadSegments()
+        #expect(after.map(\.segmentID) == ["c"])
+    }
 }
