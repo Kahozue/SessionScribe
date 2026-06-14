@@ -48,16 +48,10 @@ public struct LocalTranscriptSummarizer: TranscriptSummarizing {
     }
 }
 
-/// 依設定挑整理器/摘要器；任一條件不滿足都回本機（Local Only 程式層強制）。
-/// 只有「總開關開 AND 引擎=雲端 AND 有 active 供應商 AND key 存在」才建構雲端 client。
 public enum AssistResolver {
-    public static func client(settings: CloudLLMSettings, keychain: KeychainStore) -> CloudLLMClient? {
-        guard settings.enabled, settings.engine == .cloud,
-              let provider = settings.activeProvider,
-              let key = try? keychain.secret(account: provider.id), !key.isEmpty,
-              let url = URL(string: provider.baseURL) else {
-            return nil
-        }
+    /// 由供應商與 key 直接建 chat client（測試連線、低階用）。
+    public static func makeClient(provider: CloudProviderConfig, key: String) -> CloudLLMClient? {
+        guard !key.isEmpty, let url = URL(string: provider.baseURL) else { return nil }
         switch provider.format {
         case .openAICompatible:
             return OpenAICompatibleClient(baseURL: url, apiKey: key, model: provider.model)
@@ -68,15 +62,48 @@ public enum AssistResolver {
         }
     }
 
-    public static func eventOrganizer(settings: CloudLLMSettings, keychain: KeychainStore) -> EventOrganizing {
-        if let client = client(settings: settings, keychain: keychain) {
+    /// 依 feature 取 chat client；任一條件不滿足回 nil（Local Only 程式層強制）。
+    public static func client(settings: CloudLLMSettings, keychain: KeychainStore,
+                              feature: AssistFeature) -> CloudLLMClient? {
+        guard settings.enabled, settings.engine(for: feature) == .cloud,
+              let provider = settings.provider(for: feature),
+              let key = try? keychain.secret(account: provider.id), !key.isEmpty else {
+            return nil
+        }
+        return makeClient(provider: provider, key: key)
+    }
+
+    /// 依 offlineTranscript feature 取 STT client；需供應商支援 STT。
+    public static func sttClient(settings: CloudLLMSettings,
+                                 keychain: KeychainStore) -> CloudSTTClient? {
+        let feature = AssistFeature.offlineTranscript
+        guard settings.enabled, settings.engine(for: feature) == .cloud,
+              let provider = settings.provider(for: feature), provider.format.supportsSTT,
+              let key = try? keychain.secret(account: provider.id), !key.isEmpty,
+              let url = URL(string: provider.baseURL) else {
+            return nil
+        }
+        switch provider.format {
+        case .openAICompatible:
+            return OpenAISTTClient(baseURL: url, apiKey: key, model: provider.model)
+        case .gemini:
+            return GeminiSTTClient(baseURL: url, apiKey: key, model: provider.model)
+        case .anthropic:
+            return nil
+        }
+    }
+
+    public static func eventOrganizer(settings: CloudLLMSettings,
+                                      keychain: KeychainStore) -> EventOrganizing {
+        if let client = client(settings: settings, keychain: keychain, feature: .events) {
             return CloudEventOrganizer(client: client)
         }
         return LocalEventOrganizer()
     }
 
-    public static func summarizer(settings: CloudLLMSettings, keychain: KeychainStore) -> TranscriptSummarizing {
-        if let client = client(settings: settings, keychain: keychain) {
+    public static func summarizer(settings: CloudLLMSettings,
+                                  keychain: KeychainStore) -> TranscriptSummarizing {
+        if let client = client(settings: settings, keychain: keychain, feature: .summary) {
             return CloudTranscriptSummarizer(client: client)
         }
         return LocalTranscriptSummarizer()
