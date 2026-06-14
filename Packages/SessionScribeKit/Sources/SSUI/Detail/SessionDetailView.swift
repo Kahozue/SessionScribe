@@ -258,11 +258,21 @@ final class SessionDetailViewModel {
     }
 
     /// 對既有音訊離線轉寫（匯入的 session 或純錄音場次）。
-    func transcribe() async {
+    /// reset=true 為重新轉錄：先清空既有逐字稿再轉，避免附加重複。
+    func transcribe(reset: Bool = false) async {
         guard let session, !transcribing else { return }
         transcribing = true
         transcribeProgress = 0
         defer { transcribing = false }
+        if reset {
+            do {
+                try await store.resetSegments()
+                segments = []
+            } catch {
+                errorMessage = "清空舊逐字稿失敗：\(error.localizedDescription)"
+                return
+            }
+        }
         let useMock = UserDefaults.standard.bool(forKey: DisplaySettings.useMockEngineKey)
         guard
             let engine = await EngineSelector.selectAndPrepare(
