@@ -9,6 +9,10 @@ public protocol CloudLLMClient: Sendable {
 /// 可注入的 HTTP 傳輸，預設包 URLSession；測試以 stub 回傳預錄資料，不打真網路。
 public typealias HTTPTransport = @Sendable (URLRequest) async throws -> (Data, HTTPURLResponse)
 
+enum CloudHTTPTimeouts {
+    static let audioTranscription: TimeInterval = 15 * 60
+}
+
 public enum CloudProviderFormat: String, Codable, Sendable, CaseIterable {
     case openAICompatible = "openai_compatible"
     case anthropic

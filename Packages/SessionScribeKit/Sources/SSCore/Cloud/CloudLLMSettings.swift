@@ -6,7 +6,7 @@ public enum AssistEngineKind: String, Codable, Sendable, CaseIterable {
 
 /// 單一供應商設定（不含 API key；key 存 Keychain，以 id 為 account）。
 public struct CloudProviderConfig: Codable, Equatable, Sendable, Identifiable {
-    public static let defaultOpenAISTTModel = "gpt-4o-transcribe-diarize"
+    public static let defaultOpenAISTTModel = "gpt-4o-mini-transcribe"
 
     public var id: String
     public var format: CloudProviderFormat
@@ -165,7 +165,8 @@ public struct CloudLLMSettings: Codable, Equatable, Sendable {
         audioProviderID: String?
     ) -> Bool {
         guard provider.format == .openAICompatible,
-              provider.model == "whisper-1",
+              (provider.model == "whisper-1"
+                || provider.model == "gpt-4o-transcribe-diarize"),
               provider.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
                 == "https://api.openai.com/v1" else {
             return false

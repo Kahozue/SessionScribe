@@ -89,7 +89,7 @@ swift test --package-path Packages/SessionScribeKit
 
 - **即時 ASR 雲端串流尚未實作**：設定面板會顯示即時 ASR 的雲端選項，但標示「開發中」且選了會被拉回本地；實際錄音時仍走本機 `EngineSelector` 降級鏈。
 - **語音類供應商選單只列支援 STT 者**：只有 OpenAI 相容與 Gemini 格式提供語音轉文字端點，Anthropic 不支援 STT，不會出現在語音類供應商選單中。
-- **語音槽新增供應商使用 STT 預設值**：OpenAI 語音樣板預設 model 為 `gpt-4o-transcribe-diarize`，文字類 OpenAI 樣板仍使用 chat model。
+- **語音槽新增供應商使用 STT 預設值**：OpenAI 語音樣板預設 model 為 `gpt-4o-mini-transcribe`，文字類 OpenAI 樣板仍使用 chat model。若需要 speaker label，可手動改用 `gpt-4o-transcribe-diarize`。
 - **OpenAI 相容端點需自行確認支援 `/audio/transcriptions`**：部分 OpenAI 相容端點（例如 DeepSeek）並無語音轉文字 API。選為語音類供應商後，執行離線轉錄稿時若該端點無此路徑會在執行時回連線錯誤，UI 不會預先擋下。
 - **雲端離線轉錄為單檔上傳**：選雲端時會把整段 session 音訊匯出為單一 `.m4a` 後上傳，受所選供應商的檔案大小與時長上限約束；超出限制時上傳會失敗並顯示錯誤訊息，不會自動切分重試。
 

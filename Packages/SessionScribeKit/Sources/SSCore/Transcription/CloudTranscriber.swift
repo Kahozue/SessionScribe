@@ -16,13 +16,23 @@ public enum CloudTranscriber {
 
     /// 純對應：STT 分段 → TranscriptSegment。
     public static func makeSegments(from stt: [CloudSTTSegment], sessionID: String,
-                                    language: String, model: String) -> [TranscriptSegment] {
+                                    language: String, model: String,
+                                    fallbackEndSeconds: Double? = nil) -> [TranscriptSegment] {
         stt.map { s in
-            TranscriptSegment(
+            let endSeconds: Double
+            if stt.count == 1,
+               s.endSeconds <= s.startSeconds,
+               let fallbackEndSeconds,
+               fallbackEndSeconds > s.startSeconds {
+                endSeconds = fallbackEndSeconds
+            } else {
+                endSeconds = s.endSeconds
+            }
+            return TranscriptSegment(
                 segmentID: UUID().uuidString,
                 sessionID: sessionID,
                 startSeconds: s.startSeconds,
-                endSeconds: s.endSeconds,
+                endSeconds: endSeconds,
                 text: s.text,
                 isFinal: true,
                 language: language,
@@ -43,7 +53,7 @@ public enum CloudTranscriber {
         progress: (@Sendable (Double) -> Void)? = nil
     ) async throws {
         let audioDirectory = sessionDirectory.appending(path: SessionFiles.audioDirectory)
-        guard try AudioManifestFile.readIfPresent(from: audioDirectory) != nil else {
+        guard let manifest = try AudioManifestFile.readIfPresent(from: audioDirectory) else {
             throw TranscribeError.noAudio
         }
         progress?(0.1)
@@ -58,7 +68,8 @@ public enum CloudTranscriber {
         progress?(0.8)
 
         var segments = makeSegments(
-            from: raw, sessionID: session.sessionID, language: session.locale, model: model)
+            from: raw, sessionID: session.sessionID, language: session.locale, model: model,
+            fallbackEndSeconds: manifest.totalDurationSeconds)
         if !lexicon.isEmpty {
             segments = segments.map {
                 var s = $0; s.text = Lexicon.apply(s.text, rules: lexicon); return s

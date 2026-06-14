@@ -10,7 +10,7 @@ struct CloudTranscriptionPresentationTests {
         settings.providers = [
             CloudProviderConfig(
                 id: "audio", format: .openAICompatible, displayName: "OpenAI",
-                baseURL: "https://api.openai.com/v1", model: "gpt-4o-transcribe-diarize")
+                baseURL: "https://api.openai.com/v1", model: "gpt-4o-mini-transcribe")
         ]
         settings.audioProviderID = "audio"
         settings.setEngine(.cloud, for: .offlineTranscript)

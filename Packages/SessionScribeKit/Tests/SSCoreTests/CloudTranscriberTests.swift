@@ -25,4 +25,17 @@ struct CloudTranscriberTests {
         #expect(CloudTranscriber.makeSegments(
             from: [], sessionID: "s1", language: "zh-TW", model: "m").isEmpty)
     }
+
+    @Test func 單段全文無時間戳時用音訊總長補結束時間() {
+        let stt = [
+            CloudSTTSegment(startSeconds: 0, endSeconds: 0, text: "整段逐字稿"),
+        ]
+        let segs = CloudTranscriber.makeSegments(
+            from: stt, sessionID: "s1", language: "zh-TW",
+            model: "gpt-4o-mini-transcribe", fallbackEndSeconds: 226.47)
+        #expect(segs.count == 1)
+        #expect(segs[0].startSeconds == 0)
+        #expect(segs[0].endSeconds == 226.47)
+        #expect(segs[0].speaker == nil)
+    }
 }

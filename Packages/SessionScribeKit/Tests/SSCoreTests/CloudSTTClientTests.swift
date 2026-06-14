@@ -6,10 +6,14 @@ private func stub(
     _ json: String,
     status: Int = 200,
     expectedFields: [String] = [],
-    rejectedFields: [String] = []
+    rejectedFields: [String] = [],
+    expectedTimeout: TimeInterval? = nil
 ) -> HTTPTransport {
     { req in
         let body = String(data: req.httpBody ?? Data(), encoding: .utf8) ?? ""
+        if let expectedTimeout {
+            #expect(req.timeoutInterval == expectedTimeout)
+        }
         for field in expectedFields {
             #expect(body.contains(field))
         }
@@ -23,6 +27,15 @@ private func stub(
 }
 
 struct CloudSTTClientTests {
+    @Test func openAI音訊轉寫使用長逾時() throws {
+        let client = OpenAISTTClient(baseURL: URL(string: "https://api.example.com/v1")!,
+            apiKey: "sk", model: "gpt-4o-transcribe-diarize")
+        let tmp = FileManager.default.temporaryDirectory.appending(path: "timeout-\(UUID()).m4a")
+        try Data([0]).write(to: tmp)
+        let req = try client.makeRequest(audioFileURL: tmp, languageCode: "zh")
+        #expect(req.timeoutInterval == CloudHTTPTimeouts.audioTranscription)
+    }
+
     @Test func openAI解析verbose_json分段() async throws {
         let body = """
         {"text":"全文","segments":[
@@ -69,23 +82,27 @@ struct CloudSTTClientTests {
         #expect(segs[0].text == "只有全文")
     }
 
-    @Test func openAIGPT4oTranscribe使用json格式() async throws {
-        let client = OpenAISTTClient(baseURL: URL(string: "https://api.example.com/v1")!,
-            apiKey: "sk", model: "gpt-4o-transcribe",
-            transport: stub(#"{"text":"只有全文"}"#,
-                expectedFields: ["json"],
-                rejectedFields: ["verbose_json", "diarized_json", "chunking_strategy"]))
-        let tmp = FileManager.default.temporaryDirectory.appending(path: "gpt4o-\(UUID()).m4a")
-        try Data([0]).write(to: tmp)
-        let segs = try await client.transcribe(audioFileURL: tmp, languageCode: nil)
-        #expect(segs.count == 1)
-        #expect(segs[0].text == "只有全文")
+    @Test func openAIGPT4oTranscribe系列使用json格式() async throws {
+        for model in ["gpt-4o-transcribe", "gpt-4o-mini-transcribe"] {
+            let client = OpenAISTTClient(baseURL: URL(string: "https://api.example.com/v1")!,
+                apiKey: "sk", model: model,
+                transport: stub(#"{"text":"只有全文"}"#,
+                    expectedFields: ["json"],
+                    rejectedFields: ["verbose_json", "diarized_json", "chunking_strategy"]))
+            let tmp = FileManager.default.temporaryDirectory
+                .appending(path: "\(model)-\(UUID()).m4a")
+            try Data([0]).write(to: tmp)
+            let segs = try await client.transcribe(audioFileURL: tmp, languageCode: nil)
+            #expect(segs.count == 1)
+            #expect(segs[0].text == "只有全文")
+        }
     }
 
     @Test func gemini取text為單段() async throws {
         let body = #"{"candidates":[{"content":{"parts":[{"text":"逐字內容"}]}}]}"#
         let client = GeminiSTTClient(baseURL: URL(string: "https://generativelanguage.googleapis.com")!,
-            apiKey: "k", model: "gemini-2.0-flash", transport: stub(body))
+            apiKey: "k", model: "gemini-2.0-flash",
+            transport: stub(body, expectedTimeout: CloudHTTPTimeouts.audioTranscription))
         let tmp = FileManager.default.temporaryDirectory.appending(path: "c-\(UUID()).m4a")
         try Data([0]).write(to: tmp)
         let segs = try await client.transcribe(audioFileURL: tmp, languageCode: nil)

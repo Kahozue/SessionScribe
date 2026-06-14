@@ -62,7 +62,7 @@
 
 ## 四、live_segments.jsonl
 
-對應型別 `TranscriptSegment`，一行一筆 finalized 結果。volatile 結果只存在記憶體，永不寫入本檔。欄位：`schema_version`、`segment_id`、`session_id`、`start_seconds`、`end_seconds`、`text`、`is_final`、`language`、`engine`、`model`、`speaker`（可 null）、`confidence`（可 null）、`created_at`。OpenAI `gpt-4o-transcribe-diarize` 以 `diarized_json` 回傳的 speaker label 會寫入 `speaker`；未提供 speaker 的本機 ASR、Gemini 或舊 OpenAI 回應寫入 null。
+對應型別 `TranscriptSegment`，一行一筆 finalized 結果。volatile 結果只存在記憶體，永不寫入本檔。欄位：`schema_version`、`segment_id`、`session_id`、`start_seconds`、`end_seconds`、`text`、`is_final`、`language`、`engine`、`model`、`speaker`（可 null）、`confidence`（可 null）、`created_at`。預設 OpenAI STT model `gpt-4o-mini-transcribe` 回傳純逐字文字，不提供 speaker label；若手動使用 `gpt-4o-transcribe-diarize`，`diarized_json` 回傳的 speaker label 會寫入 `speaker`。未提供 speaker 的本機 ASR、Gemini 或舊 OpenAI 回應寫入 null。
 
 ## 五、manual_markers.jsonl
 
@@ -238,5 +238,5 @@ v0.2 有三種產生與更新路徑：
 - **API key**：存系統 Keychain（`kSecClassGenericPassword`），service 為 `com.sessionscribe.cloud-llm`，account 為供應商設定的 `id`。文字類與語音類兩槽若指向同一供應商 id，共用同一筆 Keychain 項目。不寫入 UserDefaults、不寫入任何檔案、不支援環境變數讀取。
 - **雲端產物**：雲端整理產生的 events 與摘要沿用既有 `events.json`／`transcript_summary.json` 結構與落盤路徑，與本機產物同結構、同 `needs_review` 規則（事件 `needs_review: true`）。雲端離線轉錄稿產生的 `TranscriptSegment` 與本機產物同結構，`engine` 欄位為 `"cloud"`。
 - **隱私旗標鏡像**：`DisplaySettings.cloudAssistEnabledKey`（`cloudAssistEnabledMirror`）僅供 UI 觀察用，實際讀寫一律走 `CloudLLMSettings.load()`／`save()`。
-- **語音類供應商樣板**：語音槽的「新增供應商」使用語音專用樣板。OpenAI 預設 model 為 `gpt-4o-transcribe-diarize`，會用 `/audio/transcriptions` 的 `diarized_json` 回應保存 speaker segment；文字類 OpenAI 樣板仍使用 chat model，避免把文字模型送到語音端點。
+- **語音類供應商樣板**：語音槽的「新增供應商」使用語音專用樣板。OpenAI 預設 model 為 `gpt-4o-mini-transcribe`，會用 `/audio/transcriptions` 的 `json` 回應產生逐字稿；若需要 speaker label，可手動改用 `gpt-4o-transcribe-diarize`。文字類 OpenAI 樣板仍使用 chat model，避免把文字模型送到語音端點。
 - **雲端隱私模式**：當某 session 的離線轉錄稿（規格 1.4）以雲端 STT 成功完成（首次轉寫或重新轉錄皆適用），該 session 的 `privacy_mode` 會被標為 `audio_cloud_asr`；文字類雲端成功則標為 `text_cloud_assist`；同一 session 兩者都發生過則標為 `text_and_audio_cloud`（見第三節 metadata.json）。

@@ -42,10 +42,11 @@ public struct OpenAISTTClient: CloudSTTClient {
         }
     }
 
-    public func transcribe(audioFileURL: URL, languageCode: String?) async throws -> [CloudSTTSegment] {
+    func makeRequest(audioFileURL: URL, languageCode: String?) throws -> URLRequest {
         guard !apiKey.isEmpty else { throw CloudLLMError.missingAPIKey }
         let boundary = "ss-\(UUID().uuidString)"
         var req = URLRequest(url: baseURL.appending(path: "audio/transcriptions"))
+        req.timeoutInterval = CloudHTTPTimeouts.audioTranscription
         req.httpMethod = "POST"
         req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
@@ -72,7 +73,11 @@ public struct OpenAISTTClient: CloudSTTClient {
         body.append(audio)
         append("\r\n--\(boundary)--\r\n")
         req.httpBody = body
+        return req
+    }
 
+    public func transcribe(audioFileURL: URL, languageCode: String?) async throws -> [CloudSTTSegment] {
+        let req = try makeRequest(audioFileURL: audioFileURL, languageCode: languageCode)
         let (data, http) = try await transport(req)
         guard (200..<300).contains(http.statusCode) else {
             throw CloudLLMError.http(status: http.statusCode,

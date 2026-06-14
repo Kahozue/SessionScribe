@@ -73,20 +73,22 @@ struct CloudLLMSettingsTests {
     @Test func 語音供應商樣板只列可直接STT的預設值() {
         let defaults = CloudProviderConfig.builtInAudioTemplates
         #expect(defaults.map(\.displayName) == ["OpenAI", "Gemini"])
-        #expect(defaults.first { $0.displayName == "OpenAI" }?.model == "gpt-4o-transcribe-diarize")
+        #expect(defaults.first { $0.displayName == "OpenAI" }?.model == "gpt-4o-mini-transcribe")
         #expect(defaults.allSatisfy { $0.format.supportsSTT })
     }
 
-    @Test func 舊OpenAISTT預設模型遷移到diarize() throws {
-        let stored = """
-        {"enabled":true,
-         "providers":[{"id":"openai-stt-abc123","format":"openai_compatible","displayName":"OpenAI",
-         "baseURL":"https://api.openai.com/v1","model":"whisper-1"}],
-         "featureEngines":{"offlineTranscript":"cloud"},
-         "audioProviderID":"openai-stt-abc123"}
-        """
-        let s = try JSONDecoder().decode(CloudLLMSettings.self, from: Data(stored.utf8))
-        #expect(s.provider(for: .offlineTranscript)?.model == "gpt-4o-transcribe-diarize")
+    @Test func 既有OpenAISTT預設模型遷移到mini() throws {
+        for oldDefault in ["whisper-1", "gpt-4o-transcribe-diarize"] {
+            let stored = """
+            {"enabled":true,
+             "providers":[{"id":"openai-stt-abc123","format":"openai_compatible","displayName":"OpenAI",
+             "baseURL":"https://api.openai.com/v1","model":"\(oldDefault)"}],
+             "featureEngines":{"offlineTranscript":"cloud"},
+             "audioProviderID":"openai-stt-abc123"}
+            """
+            let s = try JSONDecoder().decode(CloudLLMSettings.self, from: Data(stored.utf8))
+            #expect(s.provider(for: .offlineTranscript)?.model == "gpt-4o-mini-transcribe")
+        }
     }
 
     @Test func feature能力分類正確() {

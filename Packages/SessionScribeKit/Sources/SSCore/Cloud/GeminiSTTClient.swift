@@ -34,6 +34,7 @@ public struct GeminiSTTClient: CloudSTTClient {
         let audio = try Data(contentsOf: audioFileURL).base64EncodedString()
         let url = baseURL.appending(path: "v1beta/models/\(model):generateContent")
         var req = URLRequest(url: url)
+        req.timeoutInterval = CloudHTTPTimeouts.audioTranscription
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
