@@ -43,9 +43,10 @@ final class SessionDetailViewModel {
         AssistResolver.summarizer(settings: cloudSettings, keychain: keychain)
     }
 
-    /// 目前生效的引擎是否為雲端（需總開關開、引擎=雲端、供應商與 key 齊備）。
+    /// 文字整理（摘要/事件）目前是否任一走雲端，供 canRunAI / 隱私標記沿用。
     var usingCloudAssist: Bool {
-        AssistResolver.client(settings: cloudSettings, keychain: keychain) != nil
+        AssistResolver.client(settings: cloudSettings, keychain: keychain, feature: .summary) != nil
+            || AssistResolver.client(settings: cloudSettings, keychain: keychain, feature: .events) != nil
     }
 
     func load() async {

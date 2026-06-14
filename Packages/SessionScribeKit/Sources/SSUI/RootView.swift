@@ -709,10 +709,8 @@ public struct RootView: View {
 
     // MARK: - Toolbar
 
-    /// 主畫面雲端狀態標的顯示條件：總開關開且引擎=雲端（v0.3 Text Cloud Assist）。
     private var cloudAssistActive: Bool {
-        let settings = CloudLLMSettings.load()
-        return settings.enabled && settings.engine == .cloud
+        CloudLLMSettings.load().anyFeatureCloud
     }
 
     @ToolbarContentBuilder
