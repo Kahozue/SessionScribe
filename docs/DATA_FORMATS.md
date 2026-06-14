@@ -1,7 +1,7 @@
 # SessionScribe 資料格式
 
-版本：1.3（2026-06-13，對齊 v0.3 摘要與驗收現況）
-對應規格：`docs/SPEC.md` 1.3 第八節
+版本：1.4（2026-06-15，對齊規格 1.4 各功能引擎個別選擇與重新轉錄）
+對應規格：`docs/SPEC.md` 1.3 第八節、1.4
 實作位置：`Packages/SessionScribeKit/Sources/SSCore/`（Models 與 Storage）
 
 ## 一、通用編碼規則
@@ -50,7 +50,7 @@
 | `ended_at` | ISO-8601 或 null | 正常停止時刻；null 即崩潰殘留候選 |
 | `locale` | String | 如 `zh-TW` |
 | `asr_engine` | String | 本場實際使用的引擎名稱 |
-| `privacy_mode` | String | `local_only`、`text_cloud_assist`、`audio_cloud_asr`；預設 `local_only`。當該 session 跑過雲端整理或雲端摘要（v0.3 Text Cloud Assist）後，如實更新為 `text_cloud_assist`。`audio_cloud_asr` 保留給後續版本 |
+| `privacy_mode` | String | `local_only`、`text_cloud_assist`、`audio_cloud_asr`；預設 `local_only`。當該 session 跑過雲端整理、雲端摘要或雲端字幕翻譯（文字類雲端）後，如實更新為 `text_cloud_assist`。當該 session 的離線轉錄稿走雲端 STT 成功後（規格 1.4），如實更新為 `audio_cloud_asr` |
 | `audio_input` | String | 輸入裝置名稱 |
 | `recovered` | Bool | 曾經崩潰恢復 |
 | `notes` | String | 使用者備註 |
@@ -215,11 +215,27 @@ v0.2 有三種產生與更新路徑：
 - `events.csv`：事件的完整欄位，陣列欄位以分號串接，RFC 4180 跳脫。
 - `<session_id>.m4a`：依 manifest 順序串接 CAF chunks 轉成單一 AAC 檔（`AudioExporter`，AVMutableComposition＋AppleM4A preset），與原始 CAF 匯出並存不取代。
 
-## 十三、雲端整理設定（v0.3 Text Cloud Assist）
+## 十三、雲端整理設定（v0.3 Text Cloud Assist，1.4 各功能引擎個別選擇）
 
 雲端整理的設定本體與 API key 分開存放：
 
-- **設定本體**：`CloudLLMSettings` 以 JSON 編碼存 `UserDefaults`，鍵為 `cloudLLMSettings`。欄位：`enabled`（總開關，預設 false）、`engine`（`local`／`cloud`，預設 `local`）、`providers`（供應商設定清單）、`activeProviderID`（目前選用的供應商 id）。每筆供應商設定含 `id`、`format`（`openai_compatible`／`anthropic`／`gemini`）、`displayName`、`baseURL`、`model`。**不含 API key。**
-- **API key**：存系統 Keychain（`kSecClassGenericPassword`），service 為 `com.sessionscribe.cloud-llm`，account 為供應商設定的 `id`。不寫入 UserDefaults、不寫入任何檔案、不支援環境變數讀取。
-- **雲端產物**：雲端整理產生的 events 與摘要沿用既有 `events.json`／`transcript_summary.json` 結構與落盤路徑，與本機產物同結構、同 `needs_review` 規則（事件 `needs_review: true`）。
+- **設定本體**：`CloudLLMSettings` 以 JSON 編碼存 `UserDefaults`，鍵為 `cloudLLMSettings`。本結構為程式內部設定，欄位採 camelCase（非其他檔案的 snake_case 慣例）。目前（規格 1.4）欄位：
+  - `enabled`：Bool，總開關，預設 `false`。
+  - `providers`：供應商設定清單，每筆含 `id`、`format`（`openai_compatible`／`anthropic`／`gemini`）、`displayName`、`baseURL`、`model`。**不含 API key。**
+  - `featureEngines`：`[String: AssistEngineKind]`，鍵為 `AssistFeature` 的 rawValue（`offlineTranscript`／`liveASR`／`summary`／`events`／`translation`），值為 `local`／`cloud`。未列出的 feature 視為 `local`。
+  - `textProviderID`：String 或 null，文字類功能（`summary`／`events`／`translation`）共用的 active 供應商 id。
+  - `audioProviderID`：String 或 null，語音類功能（`offlineTranscript`／`liveASR`）共用的 active 供應商 id。
+
+  讀取輔助：`engine(for:)`（查 `featureEngines`，預設 `local`）、`setEngine(_:for:)`、`providerID(for:)`（依 `feature.capability` 回傳 `textProviderID` 或 `audioProviderID`）、`provider(for:)`（解析為對應 `CloudProviderConfig`）、`anyFeatureCloud`（總開關開且至少一項 feature 為雲端，供主畫面狀態標使用）。
+
+- **舊格式自動遷移**：v0.3 的舊格式為單一 `enabled` + `engine`（`local`／`cloud`）+ `providers` + `activeProviderID`。解碼時若找不到 `featureEngines` 鍵，視為舊格式並自動遷移：
+  - 舊 `engine` 套用到 `summary`、`events`、`translation`、`offlineTranscript` 四個 feature；`liveASR` 一律設為 `local`。
+  - 舊 `activeProviderID` 同時填入 `textProviderID` 與 `audioProviderID`。
+  - `enabled`、`providers` 直接沿用。
+
+  遷移只在解碼時於記憶體中發生；下次 `save()` 會以新格式（含 `featureEngines`/`textProviderID`/`audioProviderID`）覆寫，不留舊鍵。
+
+- **API key**：存系統 Keychain（`kSecClassGenericPassword`），service 為 `com.sessionscribe.cloud-llm`，account 為供應商設定的 `id`。文字類與語音類兩槽若指向同一供應商 id，共用同一筆 Keychain 項目。不寫入 UserDefaults、不寫入任何檔案、不支援環境變數讀取。
+- **雲端產物**：雲端整理產生的 events 與摘要沿用既有 `events.json`／`transcript_summary.json` 結構與落盤路徑，與本機產物同結構、同 `needs_review` 規則（事件 `needs_review: true`）。雲端離線轉錄稿產生的 `TranscriptSegment` 與本機產物同結構，`engine` 欄位為 `"cloud"`。
 - **隱私旗標鏡像**：`DisplaySettings.cloudAssistEnabledKey`（`cloudAssistEnabledMirror`）僅供 UI 觀察用，實際讀寫一律走 `CloudLLMSettings.load()`／`save()`。
+- **`audioCloudASR` 隱私模式**：當某 session 的離線轉錄稿（規格 1.4）以雲端 STT 成功完成（首次轉寫或重新轉錄皆適用），該 session 的 `privacy_mode` 會被標為 `audio_cloud_asr`（見第三節 metadata.json）。

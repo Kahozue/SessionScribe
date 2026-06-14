@@ -1,9 +1,9 @@
 # SessionScribe 規格書
 
-版本：1.3（2026-06-13；1.1 增補第十五節使用者新增功能，1.2 對齊 v0.2 已合併現況，1.3 增補 v0.3 摘要、雲端整理與驗收狀態）
+版本：1.4（2026-06-15；1.1 增補第十五節使用者新增功能，1.2 對齊 v0.2 已合併現況，1.3 增補 v0.3 摘要、雲端整理與驗收狀態，1.4 增補各功能引擎個別選擇、雲端離線轉錄稿與翻譯、重新轉錄）
 來源：`aim.md` 原始需求，加上敲定階段的修訂決議。本文件是開發依據，與 aim.md 衝突時以本文件為準。
 
-目前實作狀態：v0.1 的 M0 至 M8 已完成並合併到 `main`；v0.2 驗收通過。v0.3 已開始，包含整份逐字稿摘要（本機 Apple Foundation Models）、右欄摘要／結構化事件／標記排序，以及兩小時級長錄測試改列 v0.3 驗收項目。雲端整理（Text Cloud Assist）已實作並通過實機驗收（2026-06-14）：事件整理與整份摘要兩項操作新增 OpenAI 相容／Anthropic／Gemini 三種雲端後端，本機與雲端並存、由使用者選用，Local Only 由程式層堅守。雲端 ASR（Audio Cloud ASR）尚未開始。
+目前實作狀態：v0.1 的 M0 至 M8 已完成並合併到 `main`；v0.2 驗收通過。v0.3 已開始，包含整份逐字稿摘要（本機 Apple Foundation Models）、右欄摘要／結構化事件／標記排序，以及兩小時級長錄測試改列 v0.3 驗收項目。雲端整理（Text Cloud Assist）已實作並通過實機驗收（2026-06-14）：事件整理與整份摘要兩項操作新增 OpenAI 相容／Anthropic／Gemini 三種雲端後端，本機與雲端並存、由使用者選用，Local Only 由程式層堅守。規格 1.4（2026-06-15）把雲端選項擴張為五項功能（離線轉錄稿、即時 ASR、摘要、結構化事件、字幕翻譯）各自選本地或雲端，本次落地離線轉錄稿、摘要、結構化事件、字幕翻譯四項雲端，即時 ASR 的雲端串流僅保留設定；同時為已轉錄 session 加上重新轉錄入口。
 
 ## 一、產品定位
 
@@ -32,7 +32,7 @@ macOS 原生桌面應用程式，核心能力：
 5. **MVP 的 CSV 匯出對象是 markers**：`markers.csv` 包含時間、類型、備註、鄰近 segment 文字。`events.csv` 隨 structured events 移至 v0.2。
 6. **快捷鍵焦點規則**：Q/R/S/A 單鍵快捷只在逐字稿區持有焦點時生效；Cmd+1 至 Cmd+4 為全域替代；大按鈕永遠可點。任何文字輸入框聚焦時單鍵不得觸發標記。
 7. **防睡眠**：錄音期間以 `ProcessInfo.processInfo.beginActivity` 持有 assertion 阻止 idle sleep，停止錄音時釋放。
-8. **沙盒策略**：啟用 App Sandbox。v0.3 雲端整理出貨後，entitlements 含 `com.apple.security.app-sandbox`、`com.apple.security.device.audio-input`、`com.apple.security.files.user-selected.read-write` 與 `com.apple.security.network.client`。單一 app 帶 network client entitlement，Local Only 的零網路保證自 OS 強制降為程式層保證：唯一的 `URLSession` 只在 `SSCore/Cloud` 層，且只在「總開關開 AND 引擎=雲端 AND 供應商與 key 齊備」時才被建構（`AssistResolver` 集中守門，並有單元測試確保 Local Only 不建構任何 client）。以 in-app guard、持續 UI 狀態標、啟用前警告、README 可驗證性說明補強。Session 存放於 app container 的 Application Support，提供 Reveal in Finder 與標準匯出面板。
+8. **沙盒策略**：啟用 App Sandbox。v0.3 雲端整理出貨後，entitlements 含 `com.apple.security.app-sandbox`、`com.apple.security.device.audio-input`、`com.apple.security.files.user-selected.read-write` 與 `com.apple.security.network.client`。單一 app 帶 network client entitlement，Local Only 的零網路保證自 OS 強制降為程式層保證：唯一的 `URLSession` 只在 `SSCore/Cloud` 層，且只在「總開關開 AND 該功能 engine=雲端 AND 對應供應商與 key 齊備」時才被建構（`AssistResolver` 依功能逐一守門，並有單元測試確保未選雲端的功能不建構任何 client）。以 in-app guard、持續 UI 狀態標、啟用前警告、README 可驗證性說明補強。Session 存放於 app container 的 Application Support，提供 Reveal in Finder 與標準匯出面板。
 9. **文件歸宿**：aim.md 保留原樣作為原始需求書，本 SPEC.md 是正式規格。
 10. **音訊格式**：canonical 格式為 PCM CAF chunks（48kHz 單聲道 16-bit 起，依輸入裝置調整）。CAF 容器對中斷寫入容錯最佳。磁碟代價約每兩小時 700MB，錄音前檢查可用空間，匯出時可選轉 m4a。
 
@@ -103,9 +103,11 @@ macOS 原生桌面應用程式，核心能力：
 
 ## 七、隱私模式
 
-1. **Local Only**（預設）：音訊與逐字稿留本機，使用 Apple 本機 ASR，零網路請求（entitlements 強制）。
-2. **Text Cloud Assist**（v0.3 已實作）：音訊永遠留本機，只把使用者選定的逐字稿或結構化請求傳給雲端 LLM；事件整理與整份摘要兩項操作可選雲端後端，支援 OpenAI 相容／Anthropic／Gemini 三種線路格式，每供應商可設 base URL／model，API key 存 Keychain（不進 UserDefaults、不寫檔）。首次開啟總開關跳警告，產物一律 `needs_review`。詳見規格 1.3。
-3. **Audio Cloud ASR**（v0.3，未實作）：允許音訊片段傳雲端 ASR，啟用前明確提醒，預設關閉，API key 只從本機設定讀取，提供安全輸入介面。
+1. **Local Only**（預設）：所有五項功能（離線轉錄稿、即時 ASR、摘要、結構化事件、字幕翻譯）皆設為本地，音訊與逐字稿留本機，使用 Apple 本機 ASR，零網路請求（entitlements 強制）。
+2. **Text Cloud Assist**（v0.3 已實作，規格 1.4 擴充）：摘要、結構化事件、字幕翻譯三項文字類功能可個別選雲端，只把選定的逐字稿或事件文字送往雲端 LLM，不涉音訊；支援 OpenAI 相容／Anthropic／Gemini 三種線路格式，每供應商可設 base URL／model，API key 存 Keychain（不進 UserDefaults、不寫檔）。首次開啟總開關跳警告，產物一律 `needs_review`。詳見規格 1.3、1.4。
+3. **Audio Cloud ASR**（規格 1.4 實作離線轉錄稿雲端）：離線轉錄稿功能選雲端時，該 session 的整段音訊會匯出為單一 .m4a 上傳雲端 STT（OpenAI 相容或 Gemini，Anthropic 不支援 STT）；成功後該 session 的 `privacyMode` 標為 `audio_cloud_asr`。即時 ASR 的雲端串流尚未實作，設定面板的雲端選項顯示但停用（標「開發中」），實際仍走本地。
+
+依各功能設定運作：音訊僅在「離線轉錄稿」選雲端時，於該 session 執行轉寫時才上傳；文字類功能選雲端只送文字（逐字稿或事件文字），絕不送音訊。未選雲端的功能一律留在本機，零網路請求。
 
 UI 持續顯示目前模式；非 Local Only 時有明顯但不干擾的提示。
 
@@ -280,7 +282,7 @@ v0.2 已增加：模板化 `structured_notes.md`（論文口試格式照 aim.md 
 
 ## 十一、自定義能力與版本歸屬
 
-資料模型自始預留，UI 分版實作。以下為 2026-06-13 現況：
+資料模型自始預留，UI 分版實作。以下為 2026-06-15 現況：
 
 | 能力 | 現況 |
 |---|---|
@@ -290,8 +292,10 @@ v0.2 已增加：模板化 `structured_notes.md`（論文口試格式照 aim.md 
 | 結構化事件草稿、編輯、events/structured notes 匯出 | v0.2 已實作 |
 | 本機 AI 事件生成與欄位整理 | v0.2 已實作，依 Apple Foundation Models 可用性啟用 |
 | 本機 AI 整份逐字稿摘要 | v0.3 已實作，依 Apple Foundation Models 可用性啟用 |
-| 雲端整理（Text Cloud Assist，事件整理＋整份摘要） | v0.3 已實作並驗收通過，OpenAI 相容／Anthropic／Gemini，使用者明確啟用 |
-| 雲端 ASR（Audio Cloud ASR） | 未實作，保留後續版本 |
+| 雲端整理（摘要／結構化事件／字幕翻譯） | v0.3 起逐步實作，規格 1.4 各自可選本地或雲端，OpenAI 相容／Anthropic／Gemini，使用者明確啟用 |
+| 雲端離線轉錄稿（Audio Cloud ASR） | 規格 1.4 已實作，OpenAI 相容／Gemini（Anthropic 不支援 STT），單檔上傳 |
+| 即時 ASR 雲端串流 | 規格 1.4 僅保留設定項與資料模型，設定面板標「開發中」，實際走本地 |
+| 重新轉錄入口（覆蓋逐字稿，保留衍生資料） | 規格 1.4 已實作 |
 | 自定義模板、event type、topic taxonomy | 未實作，保留後續版本 |
 | 自定義匯出欄位、Markdown 輸出格式 | 未實作，保留後續版本 |
 | 自定義 speaker role presets | 未實作，保留後續版本 |
@@ -333,7 +337,7 @@ v0.2 已增加：模板化 `structured_notes.md`（論文口試格式照 aim.md 
 
 ### v0.3
 
-已開始：右欄最上方整份逐字稿摘要（本機 AI 生成，`transcript_summary.json` 原子保存，可折疊，不顯示需複查標籤）、兩小時級長錄測試。已實作：雲端整理（Text Cloud Assist，三格式轉接器、API key 存 Keychain、設定頁雲端分頁、非 Local Only 狀態標、network client entitlement，詳見規格 1.3）。後續：雲端 ASR（Audio Cloud ASR）、自定義 AI prompt。
+已開始：右欄最上方整份逐字稿摘要（本機 AI 生成，`transcript_summary.json` 原子保存，可折疊，不顯示需複查標籤）、兩小時級長錄測試。已實作：雲端整理（Text Cloud Assist，三格式轉接器、API key 存 Keychain、設定頁雲端分頁、非 Local Only 狀態標、network client entitlement，詳見規格 1.3）；各功能引擎個別選擇、雲端離線轉錄稿（Audio Cloud ASR）、雲端字幕翻譯、重新轉錄入口（詳見規格 1.4）。後續：即時 ASR 雲端串流、自定義 AI prompt。
 
 ## 十三、測試策略
 
@@ -368,7 +372,7 @@ v0.2 已增加：模板化 `structured_notes.md`（論文口試格式照 aim.md 
 4. 摘要不得覆蓋原始逐字稿。
 5. 不得只把資料存在記憶體。
 6. API key 不得寫進程式碼。
-7. 不得預設上傳音訊。
+7. 不得預設上傳音訊：音訊僅在「離線轉錄稿」功能被使用者設為雲端時才上傳，其餘功能一律不送音訊（規格 1.4）。
 8. 不得把論文口試寫死成唯一場景。
 9. 不得忽略深色模式。
 10. 不得忽略麥克風權限。
@@ -406,4 +410,31 @@ v0.2 已增加：模板化 `structured_notes.md`（論文口試格式照 aim.md 
 4. **金鑰與設定**：供應商設定（id、format、顯示名、base URL、model）、active 供應商、總開關、引擎選擇存 UserDefaults（`CloudLLMSettings`，不含 key）；API key 存 Keychain（`kSecClassGenericPassword`，service `com.sessionscribe.cloud-llm`，account 為供應商 id），不進 UserDefaults、不寫檔。`KeychainStore` 協定便於測試注入假實作。設定頁新增「雲端」分頁：選格式、填 base URL／model、`SecureField` 輸入 key、測試連線（送極短 ping）。
 5. **隱私強制與提示**：唯一的 `URLSession` 只在 `SSCore/Cloud` 層；首次開總開關跳警告（說明選定文字會送往供應商、音訊永遠不送、產物標需複查）；跑雲端操作時把該 session 的 `privacyMode` 記為 `text_cloud_assist`；非 Local Only 時主錄音畫面與檢視頁標頭顯示狀態標。只送選定文字（摘要送 finalized 逐字稿、整理送事件 content 或逐字稿片段），絕不送音訊或原始 chunk。
 6. **錯誤處理**：雲端結果一律 `needsReview: true`；網路錯誤、401、429、逾時、JSON 解析失敗轉成清楚的中文錯誤訊息走既有 `errorMessage` 路徑；雲端失敗不影響錄音與逐字稿，可重試或改用本機。
-7. **不在範圍（YAGNI）**：串流回應、自定義整理 prompt、Audio Cloud ASR、環境變數讀 key、多供應商備援、token 計費 UI、雙建構版本（Local-Only 無 entitlement 版）。
+7. **不在範圍（YAGNI）**：串流回應、自定義整理 prompt、Audio Cloud ASR、環境變數讀 key、多供應商備援、token 計費 UI、雙建構版本（Local-Only 無 entitlement 版）。本節範圍內（事件整理、整份摘要）音訊確實永遠不送；規格 1.4 把雲端擴張到離線轉錄稿與字幕翻譯後，音訊上傳改為依離線轉錄稿功能設定。
+
+## 十七、規格 1.4 各功能引擎個別選擇與重新轉錄（2026-06-15）
+
+延續規格 1.3，把雲端選項從「事件整理＋整份摘要」擴張為五項功能各自獨立選本地或雲端，並為已轉錄 session 補上重新轉錄入口。對應設計文件：`docs/design/2026-06-14-per-feature-engine-and-retranscribe-design.md`。
+
+### 各功能引擎個別選擇
+
+1. **五項功能各自選本地/雲端**：`AssistFeature` 列舉離線轉錄稿（`offlineTranscript`）、即時 ASR（`liveASR`）、摘要（`summary`）、結構化事件（`events`）、字幕翻譯（`translation`），各自依 `capability` 分為語音類（離線轉錄稿、即時 ASR）或文字類（摘要、結構化事件、字幕翻譯）。設定頁「每項功能引擎」區提供五列 segmented 本地/雲端切換。
+2. **本次落地四項雲端**：離線轉錄稿、摘要、結構化事件、字幕翻譯選雲端時皆會實際呼叫雲端服務。即時 ASR 的雲端段在設定頁顯示但停用（標「雲端（開發中）」），選了會被拉回本地；資料模型已含 `liveASR` 鍵，未來接串流不需再改 schema。
+3. **文字類與語音類兩個供應商槽**：`CloudLLMSettings` 分 `textProviderID`（摘要/結構化事件/字幕翻譯共用）與 `audioProviderID`（離線轉錄稿/即時 ASR 共用），各自選一個 active 供應商。語音類供應商選單只列 `CloudProviderFormat.supportsSTT == true` 者（OpenAI 相容、Gemini；Anthropic 無 STT API，不列入）。
+4. **雲端離線轉錄稿（音訊上傳）**：離線轉錄稿選雲端、語音類供應商與 key 齊備時，`AssistResolver.sttClient` 回傳 `OpenAISTTClient`（`POST /audio/transcriptions`，multipart，`verbose_json` 取 segment 時間）或 `GeminiSTTClient`（`generateContent` inline audio，整段一句、無 segment 時間）。`CloudTranscriber` 重用 `AudioExporter` 把整段 session 音訊匯出為單一 `.m4a` 上傳，回傳結果套用名詞表後以 `TranscriptSegment` 落盤（`engine: "cloud"`）。成功後該 session 的 `privacyMode` 標為 `audioCloudASR`（`audio_cloud_asr`）。任一條件不齊備（總開關關、該功能非雲端、供應商非 STT 格式、key 缺）即回 nil，路由層退回本地離線轉寫。
+5. **雲端字幕翻譯（只送文字）**：字幕翻譯選雲端、文字類供應商與 key 齊備時，`AssistResolver.client(feature: .translation)` 回傳 chat client，`CloudTranslator` 以 prompt 把每句定稿文字譯為目標語言，沿用既有「定稿後出現譯文、疊在原文下」流程；只送文字，不涉音訊。否則退回本地 `AppleTranslator`。
+6. **路由與 Local Only 程式層強制**：`AssistResolver.client(settings:keychain:feature:)` 依 `feature.capability` 取對應供應商槽，需「總開關開 AND 該功能 engine=雲端 AND 對應供應商存在 AND key 非空」才建構雲端 client，任一不符回 nil 並由呼叫端退回本地；`sttClient` 額外要求供應商 `supportsSTT`。`summarizer`/`eventOrganizer` 分別綁定 `.summary`/`.events`。
+7. **隱私文案**：設定頁啟用雲端前的警告改為「依各功能設定運作。選為雲端的文字功能會上傳逐字稿與事件文字；選為雲端的轉錄稿會上傳音訊。未選雲端者一律留在本機。AI 產物標記需複查。」
+
+### 重新轉錄
+
+8. **入口與防呆**：已轉錄且有音訊的 session，檢視頁資訊列右側顯示「重新轉錄」按鈕（borderless，`arrow.clockwise`）；點擊跳出 `confirmationDialog` 二次確認，文案說明會以目前辨識語言與名詞表重新產生逐字稿並覆蓋現有逐字稿，既有摘要、結構化事件與譯文不會自動更新。
+9. **覆蓋而非附加**：`SessionStore.resetSegments()` 關閉 append handle 並原子清空 `live_segments.jsonl`，`SessionDetailViewModel.transcribe(reset: true)` 先呼叫此方法並清空記憶體中的 `segments`，再依設定走本地或雲端離線轉寫（同第 4 點路由），完成後重新載入 segments。
+10. **保留並提示衍生資料**：重新轉錄只覆蓋逐字稿本身，既有 `transcript_summary.json`、`events.json`、已產生的譯文皆不自動更新或刪除；二次確認對話框提示使用者新逐字稿可能與既有衍生資料不符，需要時自行重新產生。
+
+### 已知限制
+
+- 雲端離線轉錄稿為單檔上傳，受供應商的檔案大小／時長上限約束；不另做分段重試。
+- Gemini STT 不回傳 segment 級時間，整段音訊產生一筆逐字稿；OpenAI 相容端點若回傳 `verbose_json` 的 `segments` 則按其相對時間對齊媒體時間。
+- 不預檢供應商是否提供 `/audio/transcriptions`：OpenAI 相容格式中部分端點（如 DeepSeek）並無此端點，選為語音類供應商後執行時才會回連線錯誤。
+- 即時 ASR 雲端串流不在此次範圍，僅保留設定項與資料模型。
