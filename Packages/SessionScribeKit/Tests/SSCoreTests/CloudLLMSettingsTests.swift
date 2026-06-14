@@ -32,4 +32,18 @@ struct CloudLLMSettingsTests {
         #expect(defaults.map(\.displayName).contains("Anthropic"))
         #expect(defaults.map(\.displayName).contains("Gemini"))
     }
+
+    @Test func feature能力分類正確() {
+        #expect(AssistFeature.offlineTranscript.capability == .audio)
+        #expect(AssistFeature.liveASR.capability == .audio)
+        #expect(AssistFeature.summary.capability == .text)
+        #expect(AssistFeature.events.capability == .text)
+        #expect(AssistFeature.translation.capability == .text)
+    }
+
+    @Test func 供應商STT能力() {
+        #expect(CloudProviderFormat.openAICompatible.supportsSTT)
+        #expect(CloudProviderFormat.gemini.supportsSTT)
+        #expect(CloudProviderFormat.anthropic.supportsSTT == false)
+    }
 }

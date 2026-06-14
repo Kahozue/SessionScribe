@@ -1,5 +1,19 @@
 import Foundation
 
+/// 可個別選本地/雲端的功能。capability 決定吃文字類或語音類供應商槽。
+public enum AssistFeature: String, Codable, Sendable, CaseIterable {
+    case offlineTranscript, liveASR, summary, events, translation
+
+    public enum Capability: Sendable { case text, audio }
+
+    public var capability: Capability {
+        switch self {
+        case .offlineTranscript, .liveASR: .audio
+        case .summary, .events, .translation: .text
+        }
+    }
+}
+
 /// 整理器抽象：本機（FoundationModels）與雲端共用同一介面，供 UI 路由。
 public protocol EventOrganizing: Sendable {
     func organize(_ events: [StructuredEvent], locale: Locale,

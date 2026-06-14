@@ -21,6 +21,14 @@ public enum CloudProviderFormat: String, Codable, Sendable, CaseIterable {
         case .gemini: "Gemini"
         }
     }
+
+    /// 是否提供語音轉文字端點。Anthropic 無 STT API。
+    public var supportsSTT: Bool {
+        switch self {
+        case .anthropic: false
+        case .openAICompatible, .gemini: true
+        }
+    }
 }
 
 public enum CloudLLMError: Error, Sendable, Equatable {
