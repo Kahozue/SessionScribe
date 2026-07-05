@@ -30,6 +30,9 @@ public struct RootView: View {
     @FocusState private var transcriptFocused: Bool
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage(DisplaySettings.onboardingCompletedKey)
+    private var onboardingCompleted = false
     @AppStorage(DisplaySettings.appearanceKey)
     private var appearance = "system"
 
@@ -63,6 +66,13 @@ public struct RootView: View {
             if newValue.trimmingCharacters(in: .whitespaces).isEmpty {
                 searchHighlight = nil
             }
+        }
+        .sheet(
+            isPresented: Binding(
+                get: { !onboardingCompleted },
+                set: { if !$0 { onboardingCompleted = true } })
+        ) {
+            OnboardingSheet()
         }
         .sheet(isPresented: $showCategoryManager) {
             CategoryManagerView(model: model)
