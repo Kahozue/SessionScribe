@@ -12,6 +12,9 @@ xcuserdata/
 .build/
 .swiftpm/
 
+# 本地工作檔
+tasks/
+
 # 環境與機密
 .env
 *.key
