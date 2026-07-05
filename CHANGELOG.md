@@ -15,6 +15,7 @@
 - menu bar 錄音控制、首次啟動 onboarding、鍵盤快捷鍵總覽。
 - UI/UX 細化：設計 tokens 基準、錄音狀態列、微互動統一、Reduce Motion 全面降級、無障礙補齊。
 - MIT License、雙語 README、GitHub Actions CI。
+- 設定頁「顯示」分頁「關於」區顯示 app 版本號；設定視窗跟隨 app 外觀設定。
 
 ## v0.2（2026-06）
 
