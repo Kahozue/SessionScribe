@@ -12,6 +12,11 @@ struct SessionScribeApp: App {
             RootView(model: model)
         }
         .defaultSize(width: 1100, height: 720)
+        .commands {
+            CommandGroup(after: .help) {
+                OpenShortcutsButton()
+            }
+        }
 
         // 字幕浮層（規格 1.2）：無邊框透明、置頂、可拖曳，預設底部置中，與主視窗共用 model。
         Window("即時逐字稿", id: "floating-transcript") {
@@ -43,5 +48,21 @@ struct SessionScribeApp: App {
             MenuBarIconView(model: model)
         }
         .menuBarExtraStyle(.window)
+
+        // 鍵盤快捷鍵總覽（作品集輪，spec 第六節）：說明選單開啟。
+        Window("鍵盤快捷鍵", id: "shortcuts-overview") {
+            ShortcutsOverviewView()
+        }
+        .windowResizability(.contentSize)
+    }
+}
+
+private struct OpenShortcutsButton: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("鍵盤快捷鍵") {
+            openWindow(id: "shortcuts-overview")
+        }
     }
 }
