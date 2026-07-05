@@ -327,8 +327,13 @@ public final class RecordingViewModel {
 
     // MARK: - 跨逐字稿搜尋（規格 1.1 第 9 項）
 
-    public func search(_ query: String) -> [SearchHit] {
-        (try? TranscriptSearchService(library: library).search(query)) ?? []
+    /// 檔案掃描移出主執行緒：逐 session 讀 JSONL 屬 IO 密集，
+    /// 同步跑在 MainActor 會讓搜尋輸入逐鍵卡頓。
+    public func search(_ query: String) async -> [SearchHit] {
+        let service = TranscriptSearchService(library: library)
+        return await Task.detached(priority: .userInitiated) {
+            (try? service.search(query)) ?? []
+        }.value
     }
 
     // MARK: - Session 控制

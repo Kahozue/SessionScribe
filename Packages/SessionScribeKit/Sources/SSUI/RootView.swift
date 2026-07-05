@@ -13,6 +13,9 @@ public struct RootView: View {
     @State private var searchText = ""
     @State private var searchHistory = SearchHistory.load()
     @State private var searchHighlight: SearchHit?
+    /// 非同步搜尋結果與其對應的查詢字串；兩者不一致代表掃描仍在進行。
+    @State private var searchHits: [SearchHit] = []
+    @State private var searchedText = ""
     @State private var showCategoryManager = false
     @State private var confirmBatchDelete = false
     @State private var infoSession: Session?
@@ -161,6 +164,22 @@ public struct RootView: View {
         .searchable(text: $searchText, placement: .sidebar, prompt: "搜尋逐字稿與標記")
         .searchSuggestions { searchSuggestionRows }
         .onSubmit(of: .search) { recordSearch() }
+        // 輸入停頓後才掃描，且掃描在背景執行緒：全庫 JSONL 線性掃描
+        // 不能逐鍵同步跑在主執行緒（輸入會卡）。改字即取消重來。
+        .task(id: searchText) {
+            let trimmed = searchText.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else {
+                searchHits = []
+                searchedText = ""
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(200))
+            guard !Task.isCancelled else { return }
+            let hits = await model.search(trimmed)
+            guard !Task.isCancelled else { return }
+            searchHits = hits
+            searchedText = trimmed
+        }
         .contextMenu(forSelectionType: String.self) { ids in
             sessionContextMenu(for: ids)
         }
@@ -304,12 +323,18 @@ public struct RootView: View {
 
     private var searchResultsSection: some View {
         Section("搜尋結果") {
-            let hits = model.search(searchText)
-            if hits.isEmpty {
-                Text("沒有符合「\(searchText)」的內容")
-                    .foregroundStyle(.secondary)
+            if searchHits.isEmpty {
+                if searchedText == searchText.trimmingCharacters(in: .whitespaces) {
+                    Text("沒有符合「\(searchText)」的內容")
+                        .foregroundStyle(.secondary)
+                } else {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("搜尋中…").foregroundStyle(.secondary)
+                    }
+                }
             } else {
-                ForEach(hits) { hit in
+                ForEach(searchHits) { hit in
                     Button {
                         searchHighlight = hit
                         sidebarSelection = [hit.sessionID]
