@@ -74,6 +74,9 @@ public enum DisplaySettings {
     /// 這裡只放 UI 觀察用的旗標鍵，實際讀寫走 CloudLLMSettings.load/save。
     public static let cloudAssistEnabledKey = "cloudAssistEnabledMirror"
 
+    /// 選單列錄音控制開關（作品集輪，spec 第五節）。預設開；關閉時 MenuBarExtra scene 不建立。
+    public static let menuBarControlsEnabledKey = "menuBarControlsEnabled"
+
     static func clampedCaptionFontSize(_ raw: Double) -> Double {
         min(max(raw, captionFontSizeRange.lowerBound), captionFontSizeRange.upperBound)
     }
