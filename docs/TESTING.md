@@ -31,7 +31,7 @@ swift test --package-path Packages/SessionScribeKit
 | MockTranscriptionEngine | 腳本驅動 finalize、漸進 volatile、錯誤注入 |
 | TranscriptionCoordinator | 引擎失敗隔離（ASR 失敗錄音不中斷）、先落盤再轉發 |
 | EngineSelector | 降級鏈挑選、prepare 失敗降級、全不可用回 nil |
-| 實機引擎可用性 | AppleSpeechEngine 對 zh-TW 非 unsupported（spike 佐證） |
+| 實機引擎可用性 | AppleSpeechEngine 對 zh-TW 非 unsupported（實機驗證） |
 | Session source、category_id | 舊檔缺欄位相容、round-trip |
 | AudioImporter | wav 轉 CAF chunks、塊長精確、失敗清除半成品、不被恢復掃描誤判 |
 | OfflineTranscriber | 跨 chunk 媒體時間連續、segments 落盤 |

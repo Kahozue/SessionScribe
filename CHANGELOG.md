@@ -11,9 +11,12 @@
 - 雲端字幕翻譯：每句定稿文字送雲端 LLM，不涉音訊。
 - 重新轉錄入口：已轉錄 session 二次確認後以目前設定覆蓋逐字稿。
 - API key 存 Keychain、安全輸入；network entitlement 加入，Local Only 改由程式層堅守（唯一 URLSession 只在總開關開且該功能選雲端時建構）。
-- 作品集輪：播放頁波形圖（離線抽樣、快取、點擊拖曳 seek、markers 疊線）、menu bar 錄音控制、首次啟動 onboarding、鍵盤快捷鍵總覽、UI/UX 打磨（設計 tokens、錄音狀態列、微互動、Reduce Motion 全面降級）、無障礙補齊、MIT License、雙語 README、GitHub Actions CI。
+- 播放頁波形圖：離線抽樣、快取、點擊拖曳 seek、markers 疊線。
+- menu bar 錄音控制、首次啟動 onboarding、鍵盤快捷鍵總覽。
+- UI/UX 細化：設計 tokens 基準、錄音狀態列、微互動統一、Reduce Motion 全面降級、無障礙補齊。
+- MIT License、雙語 README、GitHub Actions CI。
 
-## v0.2（2026-06，驗收通過）
+## v0.2（2026-06）
 
 - 內建場景模板：論文口試、會議、訪談、講座；錄音四鍵文案與 type 依模板切換。
 - 自訂標記類型與專有名詞表（lexicon 套用於後續轉寫）。
@@ -21,7 +24,7 @@
 - 標記色票（Cmd+1 至 4 固定四色）與取消標記。
 - 匯出新增 structured_notes.md、events.json、events.csv、m4a。
 
-## v0.1（2026-06，M0 至 M8 驗收通過）
+## v0.1（2026-06）
 
 - 崩潰安全錄音管線：PCM CAF 分塊增量保存加 manifest 索引，啟動時自動恢復殘留 session。
 - 本機即時轉寫：SpeechAnalyzer 主引擎（zh-TW 驗證）、SFSpeechRecognizer 備援、純錄音降級；Mock 引擎供無語音環境開發。

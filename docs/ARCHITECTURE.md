@@ -279,7 +279,7 @@ SessionScribe/
 
 ### M0 專案骨架
 git init、Xcode 專案、SessionScribeKit package、entitlements（sandbox + audio-input、無 network）、app 可啟動顯示空殼三欄佈局、README 初版。
-附帶 spike：實測 `SpeechTranscriber.supportedLocales` 是否含 zh-TW，記錄於 docs。
+附帶驗證：實測 `SpeechTranscriber.supportedLocales` 是否含 zh-TW。
 驗證：建置通過、app 啟動、entitlements 檢查。
 
 ### M1 資料模型與儲存
@@ -322,7 +322,7 @@ v0.3 後續：即時 ASR 雲端串流、自訂 AI prompt、兩小時級長錄驗
 
 | # | 風險 | 影響 | 對策 |
 |---|---|---|---|
-| 1 | SpeechTranscriber 不支援 zh-TW | 主引擎不可用 | M0 spike 提早實測；SFSpeechRecognizer 備援；UI 明示當前引擎 |
+| 1 | SpeechTranscriber 不支援 zh-TW | 主引擎不可用 | M0 提早實測；SFSpeechRecognizer 備援；UI 明示當前引擎 |
 | 2 | 中英夾雜辨識劣化 | 術語錯字 | 名詞表後處理校正（v0.2）；SPEC 列為已知限制 |
 | 3 | 新 API 文件與行為落差 | M5 延期 | Mock 先行使 UI 與儲存零依賴；M5 對官方文件逐項驗證（source-driven） |
 | 4 | 長 session 記憶體成長 | 三小時卡頓 | volatile 只留最新一筆；列表 lazy 渲染；segment 落盤後可釋放 |
@@ -335,9 +335,9 @@ v0.3 後續：即時 ASR 雲端串流、自訂 AI prompt、兩小時級長錄驗
 
 ## 九、待驗證事項（實作時對官方文件確認）
 
-1. ~~`SpeechTranscriber.supportedLocales` 是否含 zh-TW（M0 spike）~~：已驗證，支援且目標機器已安裝模型，見 `docs/spikes/2026-06-12-speech-zh-tw.md`。
+1. ~~`SpeechTranscriber.supportedLocales` 是否含 zh-TW（M0）~~：已驗證，支援且目標機器已安裝模型。
 2. ~~SpeechTranscriber 是否有 `contextualStrings` 等價的詞彙提示機制~~：已實作，`TranscriptionCoordinator` 取名詞表校正目標去重後經 `setContextualStrings` 餵入；`AppleSpeechEngine` 於 start 套進 analyzer 的 AnalysisContext，`LegacySFSpeechEngine` 用 `contextualStrings`。
 3. volatile results 的更新頻率與 finalization 延遲特性（影響 UI 節流策略）。
 4. AssetInventory 的下載進度回報方式（影響下載引導 UI）。
 5. SpeechAnalyzer 對 pause 後重新 feed 的行為（決定 pause 時 keep-alive 還是 finalize 重啟）。
-6. ~~字幕浮層的 macOS 26 Liquid Glass 半透明特化（SPEC 附錄、作品集輪 spec 第七節第 9 項）~~：已決議不採用。字幕的核心是疊在任意內容上的可讀性，黑底加使用者可調透明度是字幕的正確設計，玻璃材質透出背景會使對比不穩定；浮層 hover 控制列已用系統 material（`.regularMaterial`），符合系統設計方向。
+6. ~~字幕浮層的 macOS 26 Liquid Glass 半透明特化（SPEC 附錄）~~：已決議不採用。字幕的核心是疊在任意內容上的可讀性，黑底加使用者可調透明度是字幕的正確設計，玻璃材質透出背景會使對比不穩定；浮層 hover 控制列已用系統 material（`.regularMaterial`），符合系統設計方向。
