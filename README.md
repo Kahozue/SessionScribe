@@ -10,7 +10,17 @@ A native macOS app for recording, live transcription, and one-key event marking,
 
 Core principle: **field reliability**. The raw recording is always the highest-priority asset. If ASR or any downstream processing fails, recording and already-saved data are never affected.
 
-<!-- screenshots: 素材批次回填。深淺色各一組：主畫面錄音中、檢視頁波形加歌詞模式、右欄三區、設定雲端分頁 -->
+<p align="center">
+  <img src="docs/images/detail-lyrics-light.png" alt="Playback view: waveform with marker overlays, lyrics-style transcript, and structured events" width="820">
+</p>
+
+| Live recording with one-key markers | Dark mode playback |
+|---|---|
+| ![Live recording view](docs/images/recording-light.png) | ![Dark mode playback view](docs/images/detail-lyrics-dark.png) |
+
+| Menu bar controls | Floating caption overlay |
+|---|---|
+| ![Menu bar recording controls](docs/images/menubar.png) | ![Floating caption overlay](docs/images/caption-overlay.png) |
 
 ## Features
 

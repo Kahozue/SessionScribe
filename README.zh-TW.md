@@ -4,6 +4,19 @@
 
 macOS 原生的錄音、即時轉寫與事件標記工具。為現場記錄場景設計（論文口試、會議、訪談、講座），核心原則是現場可靠性：原始錄音永遠是最高優先級，ASR 或任何後續處理失敗都不影響錄音與已保存的資料。
 
+<p align="center">
+  <img src="docs/images/detail-lyrics-light.png" alt="檢視頁：波形與標記疊線、歌詞式逐字稿、結構化事件" width="820">
+</p>
+
+| 錄音中與單鍵標記 | 深色模式檢視頁 |
+|---|---|
+| ![錄音中主畫面](docs/images/recording-light.png) | ![深色模式檢視頁](docs/images/detail-lyrics-dark.png) |
+
+| 選單列控制 | 浮動字幕 |
+|---|---|
+| ![選單列錄音控制](docs/images/menubar.png) | ![浮動字幕浮層](docs/images/caption-overlay.png) |
+
+
 目前狀態：v0.2 驗收通過。v0.3 進行中：右欄整份逐字稿摘要與雲端整理（Text Cloud Assist）已實作並通過實機驗收；右欄摘要、結構化事件、事件標記三區皆可分別折疊；五項功能（離線轉錄稿、即時 ASR、摘要、結構化事件、字幕翻譯）可各自選本地或雲端，已轉錄 session 提供重新轉錄入口；兩小時級長錄測試仍列 v0.3 驗收項目。
 
 ## 功能
