@@ -602,11 +602,20 @@ public struct RootView: View {
     private var transcriptArea: some View {
         VStack(spacing: 0) {
             recordingStatusBar
+                .transition(reduceMotion ? .identity : .move(edge: .top).combined(with: .opacity))
             if let progress = model.modelDownloadProgress {
                 downloadBanner(progress)
+                    .transition(
+                        reduceMotion ? .identity : .move(edge: .top).combined(with: .opacity))
             }
             transcriptContent
         }
+        .animation(
+            reduceMotion ? nil : .easeInOut(duration: 0.2),
+            value: model.state)
+        .animation(
+            reduceMotion ? nil : .easeInOut(duration: 0.2),
+            value: model.modelDownloadProgress == nil)
     }
 
     /// 錄音中狀態列（打磨 7.2）：紅點呼吸、狀態、時長、音量、轉寫狀態。
@@ -767,6 +776,8 @@ public struct RootView: View {
         ) {
             model.removeMarker(marker.markerID)
         }
+        // 剛建立的標記短暫高亮（兩秒內視為新建，捲動重現不再閃）。
+        .flashOnAppear(if: marker.createdAt.timeIntervalSinceNow > -2)
     }
 
     // MARK: - Toolbar

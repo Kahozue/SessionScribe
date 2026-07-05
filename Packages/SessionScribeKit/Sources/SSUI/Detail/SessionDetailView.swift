@@ -424,6 +424,7 @@ public struct SessionDetailView: View {
     @State private var editingTitle = false
     @State private var titleDraft = ""
     @State private var editingEvent: StructuredEvent?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var summaryExpanded = true
     @State private var eventsExpanded = true
     @State private var markersExpanded = true
@@ -541,14 +542,24 @@ public struct SessionDetailView: View {
         }
     }
 
+    /// 折疊切換：統一節奏 easeInOut 0.2，Reduce Motion 直接切換（7.7）。
+    private func toggleCollapse(_ mutate: () -> Void) {
+        if reduceMotion {
+            mutate()
+        } else {
+            withAnimation(.easeInOut(duration: 0.2)) { mutate() }
+        }
+    }
+
     private var summarySection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Button {
-                withAnimation(.easeInOut(duration: 0.2)) { summaryExpanded.toggle() }
+                toggleCollapse { summaryExpanded.toggle() }
             } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: summaryExpanded ? "chevron.down" : "chevron.right")
+                    Image(systemName: "chevron.right")
                         .appFont(.caption)
+                        .rotationEffect(.degrees(summaryExpanded ? 90 : 0))
                     Text("逐字稿摘要")
                         .appFont(.headline)
                     Spacer()
@@ -659,11 +670,12 @@ public struct SessionDetailView: View {
     private var structuredEventsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Button {
-                withAnimation(.easeInOut(duration: 0.2)) { eventsExpanded.toggle() }
+                toggleCollapse { eventsExpanded.toggle() }
             } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: eventsExpanded ? "chevron.down" : "chevron.right")
+                    Image(systemName: "chevron.right")
                         .appFont(.caption)
+                        .rotationEffect(.degrees(eventsExpanded ? 90 : 0))
                     Text(
                         model.events.isEmpty ? "結構化事件" : "結構化事件（\(model.events.count)）"
                     )
@@ -800,11 +812,12 @@ public struct SessionDetailView: View {
     private var markersSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Button {
-                withAnimation(.easeInOut(duration: 0.2)) { markersExpanded.toggle() }
+                toggleCollapse { markersExpanded.toggle() }
             } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: markersExpanded ? "chevron.down" : "chevron.right")
+                    Image(systemName: "chevron.right")
                         .appFont(.caption)
+                        .rotationEffect(.degrees(markersExpanded ? 90 : 0))
                     Text(
                         model.markers.isEmpty ? "事件標記" : "事件標記（\(model.markers.count)）"
                     )
