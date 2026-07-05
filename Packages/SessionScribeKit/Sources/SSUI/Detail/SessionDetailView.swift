@@ -1038,6 +1038,7 @@ struct LyricsTranscriptView: View {
     let onSelect: (TranscriptSegment) -> Void
     @AppStorage(DisplaySettings.fontSizeKey)
     private var fontSize = DisplaySettings.defaultFontSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -1053,8 +1054,12 @@ struct LyricsTranscriptView: View {
             }
             .onChange(of: currentSegmentID) {
                 guard let currentSegmentID else { return }
-                withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                if reduceMotion {
                     proxy.scrollTo(currentSegmentID, anchor: .center)
+                } else {
+                    withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                        proxy.scrollTo(currentSegmentID, anchor: .center)
+                    }
                 }
             }
             .onAppear {
@@ -1101,7 +1106,9 @@ struct LyricsTranscriptView: View {
         .background(
             isHighlighted ? Color.accentColor.opacity(0.12) : Color.clear,
             in: RoundedRectangle(cornerRadius: 8))
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: currentSegmentID)
+        .animation(
+            reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.8),
+            value: currentSegmentID)
     }
 }
 
