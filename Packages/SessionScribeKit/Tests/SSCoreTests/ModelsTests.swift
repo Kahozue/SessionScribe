@@ -9,7 +9,7 @@ struct SessionTests {
     func encodingUsesSnakeCaseAndExplicitNull() throws {
         let session = Session(
             sessionID: "2026-06-15_1000_a3f2",
-            title: "碩士論文口試 - 第一場",
+            title: "論文口試 - 第一場",
             templateID: "thesis_defense",
             createdAt: Date(timeIntervalSince1970: 1_781_402_400),
             locale: "zh-TW",
@@ -37,7 +37,7 @@ struct SessionTests {
         {
           "schema_version": 2,
           "session_id": "2026-06-15_1000_a3f2",
-          "title": "碩士論文口試 - 第一場",
+          "title": "論文口試 - 第一場",
           "template_id": "thesis_defense",
           "created_at": "2026-06-15T10:00:00+08:00",
           "started_at": "2026-06-15T10:01:12+08:00",

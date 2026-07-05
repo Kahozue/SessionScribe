@@ -1,6 +1,6 @@
 import Foundation
 
-/// 結構化事件（aim.md 第八節、規格書 v0.2）：由 marker 加前後文 segments
+/// 結構化事件（規格書 v0.2）：由 marker 加前後文 segments
 /// 生成草稿，必為 `needs_review: true` 且可追溯到原始 segment 與 marker
 /// （核心可靠性原則 8、9）。使用者可手動編輯後仍保留來源欄位。
 public struct StructuredEvent: Codable, Equatable, Sendable, Identifiable {

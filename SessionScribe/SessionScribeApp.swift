@@ -40,7 +40,7 @@ struct SessionScribeApp: App {
             SettingsView(model: model)
         }
 
-        // 選單列錄音控制（作品集輪，spec 第五節）：與主視窗共享同一個 model，
+        // 選單列錄音控制：與主視窗共享同一個 model，
         // 開關關閉時 scene 不建立（isInserted）。
         MenuBarExtra(isInserted: $menuBarControlsEnabled) {
             MenuBarControlsView(model: model)
@@ -49,7 +49,7 @@ struct SessionScribeApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        // 鍵盤快捷鍵總覽（作品集輪，spec 第六節）：說明選單開啟。
+        // 鍵盤快捷鍵總覽：說明選單開啟。
         Window("鍵盤快捷鍵", id: "shortcuts-overview") {
             ShortcutsOverviewView()
         }

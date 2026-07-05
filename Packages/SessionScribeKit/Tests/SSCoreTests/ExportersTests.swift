@@ -6,7 +6,7 @@ import Testing
 
 private let fixtureSession = Session(
     sessionID: "2026-06-15_1000_a3f2",
-    title: "碩士論文口試 - 第一場",
+    title: "論文口試 - 第一場",
     templateID: "thesis_defense",
     createdAt: Date(timeIntervalSince1970: 1_781_488_800),
     locale: "zh-TW",
@@ -45,7 +45,7 @@ struct MarkdownExporterTests {
         let markdown = MarkdownExporter.transcript(
             session: fixtureSession, segments: fixtureSegments, markers: fixtureMarkers)
         let expected = """
-        # 碩士論文口試 - 第一場
+        # 論文口試 - 第一場
 
         - session_id：2026-06-15_1000_a3f2
         - 語言：zh-TW

@@ -623,7 +623,7 @@ public struct RootView: View {
             value: model.modelDownloadProgress == nil)
     }
 
-    /// 錄音中狀態列（打磨 7.2）：紅點呼吸、狀態、時長、音量、轉寫狀態。
+    /// 錄音中狀態列：紅點呼吸、狀態、時長、音量、轉寫狀態。
     /// 只在錄音中／暫停時出現，給錄音狀態明確的視覺存在感。
     @ViewBuilder
     private var recordingStatusBar: some View {

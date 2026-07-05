@@ -12,7 +12,7 @@ private func makeTempRoot() throws -> URL {
 private func makeSession(id: String = "2026-06-15_1000_a3f2") -> Session {
     Session(
         sessionID: id,
-        title: "碩士論文口試 - 第一場",
+        title: "論文口試 - 第一場",
         templateID: "thesis_defense",
         createdAt: Date(timeIntervalSince1970: 1_781_402_400),
         locale: "zh-TW",

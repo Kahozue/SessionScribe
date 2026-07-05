@@ -1,7 +1,7 @@
 import Foundation
 import FoundationModels
 
-/// 本機 LLM 事件整理（v0.2，aim.md 十四節第二段）：用 macOS 26 的
+/// 本機 LLM 事件整理（v0.2）：用 macOS 26 的
 /// Foundation Models（on-device，零網路，符合沙盒）把機械草稿的語意欄位補齊。
 /// 核心可靠性原則：AI 產物一律 needs_review、不覆蓋 raw transcript（content）、
 /// 保留 source_segment_ids／source_marker_ids 追溯。
@@ -221,7 +221,7 @@ public enum EventOrganizer {
     }
 
     /// 把整理結果套回事件：只改語意欄位，content／來源／時間／建立時間不動，
-    /// needs_review 強制為 true（aim.md 核心原則 8）。空欄位與不合法 priority 不覆蓋原值。
+    /// needs_review 強制為 true（核心可靠性原則）。空欄位與不合法 priority 不覆蓋原值。
     /// 拆成純值參數以便單元測試（不依賴 @Generable 合成成員）。
     static func applyOrganized(
         topic: String,
