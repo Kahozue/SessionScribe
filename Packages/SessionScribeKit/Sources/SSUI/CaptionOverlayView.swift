@@ -114,7 +114,7 @@ public struct CaptionOverlayView: View {
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, 12)
-        .padding(.vertical, 7)
+        .padding(.vertical, 8)
         .background(.regularMaterial, in: Capsule())
     }
 }

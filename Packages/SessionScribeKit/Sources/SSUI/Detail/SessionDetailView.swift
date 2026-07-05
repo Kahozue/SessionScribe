@@ -555,8 +555,8 @@ public struct SessionDetailView: View {
                     if SummaryBadgePolicy.showsReviewBadge(for: model.summary) {
                         Text("需複查")
                             .appFont(.caption2)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
                             .background(.orange.opacity(0.22), in: Capsule())
                     }
                 }
@@ -753,8 +753,8 @@ public struct SessionDetailView: View {
                     if event.needsReview {
                         Text("需複查")
                             .appFont(.caption2)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
                             .background(.orange.opacity(0.22), in: Capsule())
                     }
                 }
