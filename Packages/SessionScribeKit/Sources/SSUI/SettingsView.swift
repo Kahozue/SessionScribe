@@ -79,6 +79,11 @@ private struct DisplaySettingsTab: View {
                     .appFont(.caption)
                     .foregroundStyle(.secondary)
             }
+            if let version = AppVersion.current {
+                Section("關於") {
+                    LabeledContent("版本", value: version)
+                }
+            }
         }
         .formStyle(.grouped)
     }

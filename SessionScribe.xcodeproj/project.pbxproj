@@ -174,7 +174,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = io.github.kahozue.SessionScribe;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 6.0;
@@ -317,7 +317,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = io.github.kahozue.SessionScribe;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 6.0;
