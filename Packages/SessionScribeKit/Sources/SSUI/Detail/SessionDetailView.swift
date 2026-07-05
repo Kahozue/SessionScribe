@@ -968,6 +968,7 @@ public struct SessionDetailView: View {
                     }
                     .buttonStyle(.borderless)
                     .help(player.isPlaying ? "暫停" : "播放")
+                    .accessibilityLabel(player.isPlaying ? "暫停" : "播放")
                     Button {
                         let index =
                             Self.playbackRates.firstIndex(of: player.playbackRate) ?? 3

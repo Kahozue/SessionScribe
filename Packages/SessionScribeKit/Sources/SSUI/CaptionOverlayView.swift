@@ -93,17 +93,20 @@ public struct CaptionOverlayView: View {
                 Image(systemName: "textformat.size.smaller")
             }
             .help("縮小字幕字級")
+            .accessibilityLabel("縮小字幕字級")
             Button {
                 captionFontSize = DisplaySettings.clampedCaptionFontSize(captionFontSize + 2)
             } label: {
                 Image(systemName: "textformat.size.larger")
             }
             .help("放大字幕字級")
+            .accessibilityLabel("放大字幕字級")
             Slider(
                 value: $captionOpacity,
                 in: DisplaySettings.captionOpacityRange)
                 .frame(width: 70)
                 .help("字幕底色透明度")
+                .accessibilityLabel("字幕底色透明度")
             Button {
                 dismissWindow(id: "floating-transcript")
                 model.floatingCaptionVisible = false
@@ -111,6 +114,7 @@ public struct CaptionOverlayView: View {
                 Image(systemName: "xmark")
             }
             .help("關閉字幕浮層")
+            .accessibilityLabel("關閉字幕浮層")
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, 12)
