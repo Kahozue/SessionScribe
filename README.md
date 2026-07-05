@@ -121,4 +121,4 @@ v0.1 與 v0.2 驗收清單見 `docs/TESTING.md`；兩小時級長錄改列 v0.3 
 
 ## License
 
-待定。
+MIT，見 [LICENSE](LICENSE)。
