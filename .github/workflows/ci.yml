@@ -1,0 +1,19 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select newest Xcode 26
+        run: |
+          ls -d /Applications/Xcode*.app
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          xcodebuild -version
+      - name: Swift tests
+        run: swift test --package-path Packages/SessionScribeKit
+      - name: Build app
+        run: xcodebuild -project SessionScribe.xcodeproj -scheme SessionScribe -configuration Debug build CODE_SIGNING_ALLOWED=NO
