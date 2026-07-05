@@ -112,10 +112,13 @@ struct SegmentRowView: View {
     }
 }
 
-/// volatile 尾段：較淡、斜體，視覺上明確表達未定稿。
+/// volatile 尾段：較淡、斜體，視覺上明確表達未定稿；
+/// 首次出現淡入（Reduce Motion 直接顯示），高頻更新維持無動畫。
 struct VolatileRowView: View {
     let text: String
     let fontSize: Double
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var appeared = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
@@ -124,9 +127,12 @@ struct VolatileRowView: View {
             Text(text)
                 .font(.system(size: fontSize).italic())
                 .foregroundStyle(.secondary)
-                .opacity(0.75)
         }
+        .opacity(appeared || reduceMotion ? 0.75 : 0)
         .padding(.vertical, 3)
+        .onAppear {
+            withAnimation(.easeIn(duration: 0.25)) { appeared = true }
+        }
         .accessibilityLabel("轉寫中（未定稿）：\(text)")
     }
 }

@@ -18,7 +18,17 @@ struct LevelMeterView: View {
                 ZStack(alignment: .leading) {
                     Capsule().fill(.quaternary)
                     Capsule()
-                        .fill(normalized > 0.9 ? Color.red : Color.accentColor)
+                        .fill(
+                            normalized > 0.9
+                                ? AnyShapeStyle(Color.red)
+                                : AnyShapeStyle(
+                                    LinearGradient(
+                                        colors: [
+                                            Color.accentColor.opacity(0.6),
+                                            Color.accentColor,
+                                        ],
+                                        startPoint: .leading, endPoint: .trailing))
+                        )
                         .frame(width: geometry.size.width * normalized)
                 }
             }
