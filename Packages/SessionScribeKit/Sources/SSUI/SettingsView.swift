@@ -41,6 +41,8 @@ private struct DisplaySettingsTab: View {
     private var fontSize = DisplaySettings.defaultFontSize
     @AppStorage(DisplaySettings.appearanceKey)
     private var appearance = "system"
+    @AppStorage(DisplaySettings.menuBarControlsEnabledKey)
+    private var menuBarControlsEnabled = true
 
     var body: some View {
         Form {
@@ -70,6 +72,12 @@ private struct DisplaySettingsTab: View {
                     Text("深色").tag("dark")
                 }
                 .pickerStyle(.segmented)
+            }
+            Section("選單列") {
+                Toggle("在選單列顯示錄音控制", isOn: $menuBarControlsEnabled)
+                Text("提供開始、暫停、停止與快速標記，不需切回主視窗。")
+                    .appFont(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
