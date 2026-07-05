@@ -321,3 +321,4 @@ v0.3 後續：即時 ASR 雲端串流、自訂 AI prompt、兩小時級長錄驗
 3. volatile results 的更新頻率與 finalization 延遲特性（影響 UI 節流策略）。
 4. AssetInventory 的下載進度回報方式（影響下載引導 UI）。
 5. SpeechAnalyzer 對 pause 後重新 feed 的行為（決定 pause 時 keep-alive 還是 finalize 重啟）。
+6. ~~字幕浮層的 macOS 26 Liquid Glass 半透明特化（SPEC 附錄、作品集輪 spec 第七節第 9 項）~~：已決議不採用。字幕的核心是疊在任意內容上的可讀性，黑底加使用者可調透明度是字幕的正確設計，玻璃材質透出背景會使對比不穩定；浮層 hover 控制列已用系統 material（`.regularMaterial`），符合系統設計方向。
