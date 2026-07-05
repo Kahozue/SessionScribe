@@ -22,6 +22,9 @@ final class SessionDetailViewModel {
     private(set) var summarizing = false
     private(set) var organizing = false
     private(set) var organizeProgress = 0.0
+    private(set) var waveform: Waveform?
+    private(set) var waveformGenerating = false
+    private(set) var waveformProgress = 0.0
 
     let directory: URL
     private let store: SessionStore
@@ -79,9 +82,32 @@ final class SessionDetailViewModel {
             events = (try EventsFile.readIfPresent(from: directory))?.events ?? []
             player = try? SessionPlayerCache.shared.player(
                 for: directory.appending(path: SessionFiles.audioDirectory))
+            Task { await loadWaveform() }
         } catch {
             errorMessage = "載入 session 失敗：\(error.localizedDescription)"
         }
+    }
+
+    /// 讀 waveform.json 快取；沒有且有音訊時背景抽樣生成後落盤。
+    /// 生成失敗本次維持 Slider fallback，下次開頁重試（spec 第四節）。
+    func loadWaveform() async {
+        if let cached = try? WaveformFile.readIfPresent(from: directory) {
+            waveform = cached
+            return
+        }
+        guard player != nil, !waveformGenerating else { return }
+        waveformGenerating = true
+        waveformProgress = 0
+        defer { waveformGenerating = false }
+        let audioDirectory = directory.appending(path: SessionFiles.audioDirectory)
+        let generated = await Task.detached(priority: .utility) { [weak self] in
+            try? WaveformExtractor.extract(audioDirectory: audioDirectory) { fraction in
+                Task { @MainActor in self?.waveformProgress = fraction }
+            }
+        }.value
+        guard let generated else { return }
+        try? WaveformFile.write(generated, to: directory)
+        waveform = generated
     }
 
     var sessionTemplate: SessionTemplate {
