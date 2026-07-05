@@ -240,3 +240,7 @@ v0.2 有三種產生與更新路徑：
 - **隱私旗標鏡像**：`DisplaySettings.cloudAssistEnabledKey`（`cloudAssistEnabledMirror`）僅供 UI 觀察用，實際讀寫一律走 `CloudLLMSettings.load()`／`save()`。
 - **語音類供應商樣板**：語音槽的「新增供應商」使用語音專用樣板。OpenAI 預設 model 為 `gpt-4o-mini-transcribe`，會用 `/audio/transcriptions` 的 `json` 回應產生逐字稿；若需要 speaker label，可手動改用 `gpt-4o-transcribe-diarize`。文字類 OpenAI 樣板仍使用 chat model，避免把文字模型送到語音端點。
 - **雲端隱私模式**：當某 session 的離線轉錄稿（規格 1.4）以雲端 STT 成功完成（首次轉寫或重新轉錄皆適用），該 session 的 `privacy_mode` 會被標為 `audio_cloud_asr`；文字類雲端成功則標為 `text_cloud_assist`；同一 session 兩者都發生過則標為 `text_and_audio_cloud`（見第三節 metadata.json）。
+
+## 十四、waveform.json（作品集輪，播放頁波形快取）
+
+對應型別 `Waveform` 與 `WaveformFile`，存於各 session 資料夾，原子寫入。衍生資料：由 `WaveformExtractor` 照 manifest 順序抽樣 CAF chunks 產生（每秒 10 bins、上限 2000），檢視頁首次開啟時背景生成。損毀或缺檔即重新生成，不影響 canonical 音訊與逐字稿。欄位：`schema_version`、`duration_seconds`、`rms[]`（0 至 1）、`peak[]`（0 至 1）。損毀 chunk 對應的 bins 為零值。

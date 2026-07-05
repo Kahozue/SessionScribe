@@ -53,6 +53,7 @@ swift test --package-path Packages/SessionScribeKit
 | TranslationCoordinator | prepare 成功後逐段翻譯且 segmentID 對應依序轉發；prepare 失敗全短路；單段失敗不阻斷後續；空白不翻 |
 | CloudLLMError | 網路、401、429、逾時、解析失敗轉成使用者可讀中文訊息 |
 | CloudTranscriptionPresentation | 轉寫按鈕文案依實際雲端 STT 可用性切換；雲端錯誤顯示使用者訊息而非 Swift 錯誤代碼 |
+| Waveform、WaveformExtractor | bin 數規則、waveform.json round-trip；正弦波 rms/peak 數值、跨 chunk 連續、損毀 chunk 跳過為零值 |
 
 音訊測試使用合成 buffer（固定值與正弦波），不經過麥克風；寫出的 CAF 以
 `AVAudioFile` 讀回驗證 frame 數與樣本值。
@@ -134,3 +135,11 @@ swift test --package-path Packages/SessionScribeKit
 7. **重新轉錄**：已轉錄且有音訊的 session 檢視頁資訊列有「重新轉錄」；點擊出現二次確認並說明覆蓋範圍；確認後逐字稿被新結果覆蓋，既有摘要、events、譯文不變；轉寫中途失敗（拔網路）時既有逐字稿完好無損。
 8. **文字加音訊混合旗標**：同一 session 先跑雲端摘要再跑雲端重新轉錄，`privacy_mode` 應為 `text_and_audio_cloud`。
 9. **Keychain 延遲讀取**：啟動 app 與純瀏覽設定頁其他分頁時不觸發 Keychain 授權提示；只有執行雲端動作或在雲端分頁按「從系統匯入」才讀取金鑰。
+
+## 八、波形圖實機驗證（手動）
+
+1. 開啟一個已停止且有音訊的 session，首次進檢視頁顯示 Slider 與生成進度，完成後切換為波形；重開頁面直接顯示波形（讀快取）。
+2. 點擊與拖曳波形跳轉播放位置，時間與歌詞模式定位一致；左右方向鍵微調 5 秒。
+3. 有標記的 session 波形上出現對應色票短線，位置與標記時間一致。
+4. 深淺色下波形已播放與未播放區段對比清楚。
+5. 刪除該 session 的 waveform.json 後重開頁面會重新生成。

@@ -952,11 +952,26 @@ public struct SessionDetailView: View {
                 .help("播放倍速（點擊循環切換）")
                 Text(TimeFormatting.hms(player.currentSeconds))
                     .appFont(.caption, monospacedDigit: true)
-                Slider(
-                    value: Binding(
-                        get: { player.currentSeconds },
-                        set: { player.seek(to: $0) }),
-                    in: 0...max(player.totalSeconds, 0.01))
+                if let waveform = model.waveform {
+                    WaveformView(
+                        waveform: waveform,
+                        currentSeconds: player.currentSeconds,
+                        totalSeconds: player.totalSeconds,
+                        markers: model.markers,
+                        template: model.sessionTemplate,
+                        onSeek: { player.seek(to: $0) })
+                } else {
+                    Slider(
+                        value: Binding(
+                            get: { player.currentSeconds },
+                            set: { player.seek(to: $0) }),
+                        in: 0...max(player.totalSeconds, 0.01))
+                    if model.waveformGenerating {
+                        ProgressView(value: model.waveformProgress)
+                            .frame(width: 60)
+                            .help("產生波形中")
+                    }
+                }
                 Text(TimeFormatting.hms(player.totalSeconds))
                     .appFont(.caption, monospacedDigit: true)
             }
