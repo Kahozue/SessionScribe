@@ -1,6 +1,6 @@
 # SessionScribe 測試方法
 
-版本：自 M2 起累積（2026-06-12 建立，2026-06-13 補 M3 至 M7、v0.2 回歸與 v0.3 摘要）
+版本：自 M2 起累積（2026-06-12 建立，2026-06-13 補 M3 至 M7、v0.2 回歸與 v0.3 摘要，2026-07-05 補規格 1.4 單元測試與實機清單）
 對應規格：`docs/SPEC.md` 第十三節
 
 ## 一、單元測試
@@ -45,8 +45,14 @@ swift test --package-path Packages/SessionScribeKit
 | JSONExtraction | 容錯抽出第一個 JSON 物件/陣列：剝 ```json 圍欄、前後雜訊、忽略字串內括號、陣列、無 JSON 拋錯 |
 | OpenAICompatibleClient、AnthropicClient、GeminiClient | request 組裝（端點、headers、body JSON 形狀）與 response 解析，以注入 transport stub 不打真網路；HTTP 錯誤狀態轉錯 |
 | CloudEventOrganizer、CloudTranscriptSummarizer | 以 MockCloudLLMClient 驗：補語意欄位不覆蓋 raw、來源保留、needs_review 強制 true、空逐字稿回空摘要 |
-| AssistResolver | 引擎路由：雲端+key 齊回雲端；總開關關／引擎本機／缺 key 一律退回本機（Local Only 程式層強制）|
-| CloudLLMSettings、KeychainStore | 設定 round-trip 與預設、供應商樣板齊四家；InMemoryKeychainStore 存取／覆寫／刪除語義 |
+| AssistResolver | 引擎路由：雲端+key 齊回雲端；總開關關／引擎本機／缺 key 一律退回本機（Local Only 程式層強制）；sttClient 額外要求供應商 supportsSTT |
+| CloudLLMSettings、KeychainStore | 設定 round-trip 與預設、供應商樣板齊四家、舊格式（單一 engine/activeProviderID）自動遷移；InMemoryKeychainStore 存取／覆寫／刪除語義 |
+| CloudSTTClient（OpenAISTTClient、GeminiSTTClient） | request 組裝（multipart、長逾時、依 model 選 json/verbose_json/diarized_json）；回應解析：verbose_json 分段、diarized_json 保留 speaker、無 segments 整段一句、Gemini 取 text 為單段；非 2xx 拋含供應商原因的 HTTP 錯誤 |
+| CloudTranscriber | STT 段落對應為 TranscriptSegment、空輸入回空陣列、無時間戳時以音訊總長補結束時間 |
+| CloudTranslator | 翻譯回傳純文字與 JSON 物件皆可解析、去除前後空白與中西式包覆引號 |
+| TranslationCoordinator | prepare 成功後逐段翻譯且 segmentID 對應依序轉發；prepare 失敗全短路；單段失敗不阻斷後續；空白不翻 |
+| CloudLLMError | 網路、401、429、逾時、解析失敗轉成使用者可讀中文訊息 |
+| CloudTranscriptionPresentation | 轉寫按鈕文案依實際雲端 STT 可用性切換；雲端錯誤顯示使用者訊息而非 Swift 錯誤代碼 |
 
 音訊測試使用合成 buffer（固定值與正弦波），不經過麥克風；寫出的 CAF 以
 `AVAudioFile` 讀回驗證 frame 數與樣本值。
@@ -114,3 +120,17 @@ swift test --package-path Packages/SessionScribeKit
 4. **金鑰持久化**：填 key、關閉 app 重開，供應商設定與選用狀態保留，key 從 Keychain 讀回（設定頁 SecureField 重新顯示已存的 key）；刪除供應商後對應 Keychain 項目一併清除。
 5. **錯誤情境本機資料不損**：故意填錯 key（401）、拔網路（連線失敗）、逾時，皆顯示清楚中文錯誤訊息，且錄音與逐字稿仍保存，可重試或改用本機。
 6. **狀態標與隱私旗標**：雲端引擎生效時主錄音畫面標頭出現「雲端整理」標；跑過雲端整理的 session 檢視頁標頭顯示同一標，且 metadata.json 的 `privacy_mode` 已記為 `text_cloud_assist`。首次開總開關跳啟用前警告。
+
+## 七、規格 1.4 實機驗證清單（手動，待執行）
+
+各功能引擎個別選擇、雲端離線轉錄稿、雲端字幕翻譯與重新轉錄。需 OpenAI 與 Gemini 有效 API key：
+
+1. **五功能引擎面板**：設定頁「雲端」分頁「每項功能引擎」有五列本地/雲端切換；總開關關時全部停用；即時 ASR 的雲端段標「雲端（開發中）」且點選不生效（維持本地）。
+2. **兩槽供應商**：文字類與語音類各自可選 active 供應商；語音槽選單只出現 OpenAI 相容與 Gemini（無 Anthropic）；語音槽以 OpenAI 樣板新增供應商時預設 model 為 `gpt-4o-mini-transcribe`。
+3. **雲端離線轉錄稿（OpenAI）**：轉錄稿設雲端、語音槽選 OpenAI、key 齊備，對匯入或純錄音 session 執行轉寫，按鈕文案顯示雲端字樣；完成後 live_segments.jsonl 的 `engine` 為 `cloud`，metadata 的 `privacy_mode` 為 `audio_cloud_asr`；改用 `gpt-4o-transcribe-diarize` 時 `speaker` 欄有值。
+4. **雲端離線轉錄稿（Gemini）**：同上改 Gemini，整段一句、結束時間等於音訊總長。
+5. **路由退回本地**：總開關關、或轉錄稿設本地、或語音槽未選供應商、或 key 缺，任一情況執行轉寫都走本機引擎（可用 Little Snitch 驗證零外連），不報錯。
+6. **雲端字幕翻譯**：字幕翻譯設雲端、文字槽齊備，開啟即時翻譯錄一段，每句定稿後譯文疊在原文下；只送文字（以 Charles 檢查 payload 無音訊）；session 的 `privacy_mode` 記 `text_cloud_assist`。
+7. **重新轉錄**：已轉錄且有音訊的 session 檢視頁資訊列有「重新轉錄」；點擊出現二次確認並說明覆蓋範圍；確認後逐字稿被新結果覆蓋，既有摘要、events、譯文不變；轉寫中途失敗（拔網路）時既有逐字稿完好無損。
+8. **文字加音訊混合旗標**：同一 session 先跑雲端摘要再跑雲端重新轉錄，`privacy_mode` 應為 `text_and_audio_cloud`。
+9. **Keychain 延遲讀取**：啟動 app 與純瀏覽設定頁其他分頁時不觸發 Keychain 授權提示；只有執行雲端動作或在雲端分頁按「從系統匯入」才讀取金鑰。

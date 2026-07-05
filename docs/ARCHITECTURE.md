@@ -1,7 +1,7 @@
 # SessionScribe 架構文件
 
-版本：1.3（2026-06-13；對應規格 1.3，補齊 v0.3 摘要與驗收現況）
-對應規格：`docs/SPEC.md` 1.3
+版本：1.4（2026-07-05；對應規格 1.4，補雲端層〔三格式 LLM、雲端 STT、AssistResolver 路由〕、即時翻譯層、重新轉錄流程與 network entitlement 現況）
+對應規格：`docs/SPEC.md` 1.4
 
 ## 一、分層架構
 
@@ -15,7 +15,11 @@
 │ SessionController（狀態機）、MarkerService、           │
 │ EventDraftBuilder、EventOrganizer、                    │
 │ TranscriptSummarizer、ExportService、                  │
-│ EngineSelector、MediaClock                           │
+│ EngineSelector、MediaClock、                          │
+│ TranscriptionCoordinator／OfflineTranscriber／        │
+│ CloudTranscriber（離線轉寫本地/雲端）、                │
+│ TranslationCoordinator（即時翻譯本地/雲端）、          │
+│ AssistResolver（各功能引擎路由，Local Only 程式層守門）│
 ├─────────────────────────────────────────────────────┤
 │ 基礎設施層                                            │
 │ SSAudio：AudioCaptureService、ChunkedAudioWriter、    │
@@ -24,6 +28,10 @@
 │          LegacySFSpeechEngine、MockTranscriptionEngine│
 │ SSCore.Storage：SessionStore、JSONLWriter、           │
 │          SessionLibrary（列表與崩潰恢復掃描）           │
+│ SSCore.Cloud：CloudLLMClient 三格式轉接器（OpenAI 相容 │
+│          ／Anthropic／Gemini）、CloudSTTClient（OpenAI │
+│          相容／Gemini）、KeychainStore；唯一的 URLSession│
+│          只在此層，僅在該功能選雲端且 key 齊備時建構    │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -107,6 +115,52 @@ AI 產生草稿 / AI 整理
 
 `EventOrganizer` 只在本機 Foundation Models 可用時啟用；不可用時 UI 顯示原因並保留 `EventDraftBuilder` 的機械路徑。整理流程不得修改原始逐字稿或移除已建立 markers。
 
+### 各功能引擎路由（規格 1.4）
+
+```
+UI 動作（轉寫／摘要／整理／翻譯）
+    └─ AssistResolver
+        ├─ 讀 CloudLLMSettings：總開關、featureEngines[feature]、
+        │  依 feature.capability 取 textProviderID 或 audioProviderID
+        ├─ 「總開關開 AND 該功能=雲端 AND 供應商存在 AND key 非空」
+        │      └─ 成立：建構對應 client（sttClient 額外要求 supportsSTT）
+        └─ 任一不成立：回 nil，呼叫端一律退回本機路徑
+```
+
+Local Only 的零網路保證自 v0.3 起由此路由層堅守：唯一的 `URLSession` 只在 `SSCore/Cloud`，未通過守門即不存在網路物件（`AssistResolverTests` 佐證）。
+
+### 雲端離線轉錄稿（Audio Cloud ASR，規格 1.4）
+
+```
+離線轉寫入口（匯入後轉寫／檢視頁轉寫／重新轉錄）
+    └─ CloudTranscriber
+        ├─ AudioExporter：manifest 順序串接 CAF chunks 轉單一 .m4a
+        ├─ CloudSTTClient 上傳（OpenAISTTClient /audio/transcriptions、
+        │  GeminiSTTClient generateContent inline audio）
+        ├─ 回應套名詞表 → TranscriptSegment 落盤（engine: "cloud"；
+        │  無 segment 時間者以音訊總長補單段 end time）
+        └─ 成功後 privacyMode 併入 audio_cloud_asr
+```
+
+### 即時字幕翻譯（規格 1.2 Phase 3／1.4 雲端）
+
+```
+finalized segment ──→ TranslationCoordinator（獨立 Task，不卡逐字稿）
+    ├─ 本地：AppleTranslator（macOS 26.4 以上；prepare 失敗只顯示原文）
+    └─ 雲端：CloudTranslator（AssistResolver 取 chat client，逐句只送文字）
+        └─ 譯文以 segmentID 回填 UI，僅存記憶體、不持久化
+```
+
+### 重新轉錄（規格 1.4）
+
+```
+檢視頁「重新轉錄」──→ 二次確認（confirmationDialog）
+    ├─ 於暫存目錄建立 temp SessionStore，先轉寫到暫存
+    ├─ 成功才 SessionStore.replaceSegments 原子覆蓋 live_segments.jsonl
+    │  （中途失敗既有逐字稿不動）
+    └─ 摘要、events、譯文不自動更新，由確認文案提示使用者自行重生
+```
+
 ### 崩潰恢復流程
 
 ```
@@ -125,7 +179,9 @@ App 啟動 ──→ SessionLibrary 掃描
 | PCM CAF chunks，索引不合併 | CAF 對中斷寫入容錯最佳；索引是 append-only，恢復簡單；合併是可選匯出 |
 | marker 關聯動態重算 | 按標記時附近語音常在 volatile 狀態，segment 未定稿；時間戳是唯一真相 |
 | marker 取消採原子重寫 | 建立 marker 仍保留 append+flush 的現場可靠性；取消屬於事後編輯，以完整檔案原子替換避免 tombstone 規則複雜化 |
-| 沙盒無 network entitlement | Local Only 零網路由 OS 強制，entitlements 檔可被任何人驗證 |
+| network client entitlement（v0.3 起）＋程式層守門 | 雲端功能需要網路；Local Only 保證改由 AssistResolver 逐功能守門（唯一 URLSession 只在 SSCore/Cloud，未選雲端不建構），輔以 UI 狀態標與單元測試 |
+| 文字類與語音類兩個供應商槽 | 摘要／事件／翻譯共用文字槽，轉錄稿／即時 ASR 共用語音槽；語音槽只列支援 STT 的格式，避免把 chat model 送到語音端點 |
+| 重新轉錄先寫暫存再原子替換 | 轉寫中途失敗（網路、引擎）不得毀掉既有逐字稿；成功才 replaceSegments 覆蓋 |
 | Mock engine 先於 Apple engine | UI 與儲存開發完全不被新 API 可用性卡住；CI 無需 macOS 26 語音模型 |
 | 核心邏輯在 Swift Package | swift test 可 headless 執行；pbxproj 改動最小化，利於 GitHub 協作 |
 | deployment target macOS 26 | 唯一目標機器即 macOS 26；SFSpeechRecognizer 備援解決的是 locale 缺口，與 OS 版本無關 |
@@ -177,17 +233,20 @@ SessionScribe/
         ├── Package.swift
         ├── Sources/
         │   ├── SSCore/
-        │   │   ├── Models/        （Session、TranscriptSegment、Marker、StructuredEvent、TranscriptSummary、...）
-        │   │   ├── Storage/       （SessionStore、JSONLWriter、SessionLibrary）
-        │   │   ├── Export/        （MarkdownExporter、JSONExporter、CSVExporter、AudioExporter）
-        │   │   └── SessionController/
+        │   │   ├── Models/          （Session、TranscriptSegment、Marker、StructuredEvent、TranscriptSummary、Lexicon、SessionTemplate、...）
+        │   │   ├── Storage/         （SessionStore、JSONLWriter、SessionLibrary、LibraryConfig、TranscriptSearchService）
+        │   │   ├── Export/          （MarkdownExporter、JSONExporter、CSVExporter、AudioExporter、ExportService）
+        │   │   ├── SessionController/（SessionController、MarkerService、EventDraftBuilder、EventOrganizer、TranscriptSummarizer）
+        │   │   ├── Transcription/   （TranscriptionEngine、TranscriptionCoordinator、OfflineTranscriber、CloudTranscriber）
+        │   │   ├── Translation/     （LiveTranslator、TranslationCoordinator、CloudTranslator）
+        │   │   └── Cloud/           （CloudLLMClient 三格式轉接器、CloudSTTClient〔OpenAI 相容／Gemini〕、AssistResolver、CloudLLMSettings、KeychainStore、JSONExtraction）
         │   ├── SSAudio/
-        │   ├── SSTranscription/
+        │   ├── SSTranscription/     （AppleSpeechEngine、LegacySFSpeechEngine、MockTranscriptionEngine、EngineSelector、AppleTranslator）
         │   └── SSUI/
-        │       ├── Sidebar/
-        │       ├── Transcript/
-        │       ├── Inspector/
-        │       └── Components/    （StatusBanner、LevelMeter、MarkerButtons、MarkerVisualStyle）
+        │       ├── Transcript/      （TranscriptListView）
+        │       ├── Detail/          （SessionDetailView）
+        │       ├── Components/      （LevelMeter、MarkerButtons、MarkerVisualStyle、ExportOptions、...）
+        │       └── （RootView、RecordingViewModel、SettingsView、CaptionOverlayView 等置於根層）
         └── Tests/
             ├── SSCoreTests/
             ├── SSAudioTests/
@@ -237,8 +296,8 @@ SVG 繪製 app icon 轉 icns、README 補齊（安裝、執行、權限、匯入
 
 ### v0.2 與 v0.3
 v0.2 已合併且驗收通過：模板系統、自定義 marker type、專有名詞表校正、EventDraftBuilder、結構化事件檢視與編輯、EventOrganizer 本機 AI 整理、設定頁、segment 播放、`structured_notes.md` / `events.json` / `events.csv` / m4a 匯出、Cmd+1 至 4 色票、右欄 marker 書籤取消。
-v0.3 已開始：TranscriptSummarizer 整份逐字稿摘要、`transcript_summary.json`、右欄摘要／結構化事件／標記排序、摘要不顯示需複查標籤、兩小時級長錄驗收。
-v0.3 後續：雲端整理與雲端 ASR（opt-in、加回 network entitlement）、API key 安全輸入、自訂 AI prompt。
+v0.3 已實作：TranscriptSummarizer 整份逐字稿摘要（`transcript_summary.json`）、右欄三區折疊排序、雲端整理（Text Cloud Assist，實機驗收通過）、五項功能引擎個別選擇、雲端離線轉錄稿（Audio Cloud ASR）、雲端字幕翻譯、重新轉錄入口、API key 存 Keychain、network client entitlement。
+v0.3 後續：即時 ASR 雲端串流、自訂 AI prompt、兩小時級長錄驗收。
 
 ## 八、風險清單與對策
 
@@ -258,7 +317,7 @@ v0.3 後續：雲端整理與雲端 ASR（opt-in、加回 network entitlement）
 ## 九、待驗證事項（實作時對官方文件確認）
 
 1. ~~`SpeechTranscriber.supportedLocales` 是否含 zh-TW（M0 spike）~~：已驗證，支援且目標機器已安裝模型，見 `docs/spikes/2026-06-12-speech-zh-tw.md`。
-2. SpeechTranscriber 是否有 `contextualStrings` 等價的詞彙提示機制。
+2. ~~SpeechTranscriber 是否有 `contextualStrings` 等價的詞彙提示機制~~：已實作，`TranscriptionCoordinator` 取名詞表校正目標去重後經 `setContextualStrings` 餵入；`AppleSpeechEngine` 於 start 套進 analyzer 的 AnalysisContext，`LegacySFSpeechEngine` 用 `contextualStrings`。
 3. volatile results 的更新頻率與 finalization 延遲特性（影響 UI 節流策略）。
 4. AssetInventory 的下載進度回報方式（影響下載引導 UI）。
 5. SpeechAnalyzer 對 pause 後重新 feed 的行為（決定 pause 時 keep-alive 還是 finalize 重啟）。
