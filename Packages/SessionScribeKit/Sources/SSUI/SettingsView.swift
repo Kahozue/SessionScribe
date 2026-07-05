@@ -5,6 +5,8 @@ import SwiftUI
 /// v0.2 起的設定（名詞表、自訂標記等）都收在這裡，與主視窗共用 model。
 public struct SettingsView: View {
     let model: RecordingViewModel
+    @AppStorage(DisplaySettings.appearanceKey)
+    private var appearance = "system"
 
     public init(model: RecordingViewModel) {
         self.model = model
@@ -33,6 +35,8 @@ public struct SettingsView: View {
         .padding(.bottom, 8)
         .appTypography()
         .dynamicTypeSize(DisplaySettings.uiTypeSize)
+        // 獨立 Settings scene，不經 RootView：自己跟 app 外觀設定。
+        .preferredColorScheme(DisplaySettings.colorScheme(for: appearance))
     }
 }
 
