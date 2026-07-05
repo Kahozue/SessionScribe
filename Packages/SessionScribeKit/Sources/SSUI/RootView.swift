@@ -591,10 +591,37 @@ public struct RootView: View {
     @ViewBuilder
     private var transcriptArea: some View {
         VStack(spacing: 0) {
+            recordingStatusBar
             if let progress = model.modelDownloadProgress {
                 downloadBanner(progress)
             }
             transcriptContent
+        }
+    }
+
+    /// 錄音中狀態列（打磨 7.2）：紅點呼吸、狀態、時長、音量、轉寫狀態。
+    /// 只在錄音中／暫停時出現，給錄音狀態明確的視覺存在感。
+    @ViewBuilder
+    private var recordingStatusBar: some View {
+        if model.state == .recording || model.state == .paused {
+            HStack(spacing: 10) {
+                RecordingPulseDot(paused: model.state == .paused)
+                Text(model.stateDescription.text)
+                    .appFont(.callout, weight: .semibold)
+                Text(model.formattedDuration)
+                    .appFont(.callout, monospacedDigit: true)
+                    .foregroundStyle(.secondary)
+                LevelMeterView(level: model.level)
+                Spacer()
+                if let transcription = model.transcriptionDescription {
+                    Label(transcription.text, systemImage: transcription.systemImage)
+                        .appFont(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.bar)
         }
     }
 
