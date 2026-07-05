@@ -52,6 +52,8 @@ swift test --package-path Packages/SessionScribeKit
 
 Unit tests run headless and need no microphone or speech models. The manual on-device checklist lives in [docs/TESTING.md](docs/TESTING.md).
 
+CI skips `RealEngineAvailabilityTests` because hosted runners ship no speech model assets; that suite verifies on-device engine availability and passes on real hardware.
+
 ## Privacy
 
 Local-only is the default and is enforced in code, not just in settings: the only network client in the codebase lives in `Packages/SessionScribeKit/Sources/SSCore/Cloud/` and is constructed only when the master switch is on, the specific feature is set to cloud, and a provider with a Keychain-stored key is configured. Audio is uploaded only when the offline-transcript feature is explicitly set to cloud. UI is in Traditional Chinese.

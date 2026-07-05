@@ -74,6 +74,8 @@ swift test --package-path Packages/SessionScribeKit
 
 單元測試不需要麥克風與語音模型。實機驗證清單見 `docs/TESTING.md`。
 
+CI 跳過 `RealEngineAvailabilityTests`：hosted runner 不附語音模型資產，該 suite 驗證實機引擎可用性，實機上通過。
+
 ## 隱私
 
 - 預設 Local Only：所有五項功能（離線轉錄稿、即時 ASR、摘要、結構化事件、字幕翻譯）皆設為本地，音訊與逐字稿只存本機，使用 Apple 本機語音模型；本機 AI 摘要與整理用 Apple Foundation Models，不碰網路

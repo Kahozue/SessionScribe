@@ -14,6 +14,6 @@ jobs:
           sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
           xcodebuild -version
       - name: Swift tests
-        run: swift test --package-path Packages/SessionScribeKit
+        run: swift test --package-path Packages/SessionScribeKit --skip RealEngineAvailabilityTests
       - name: Build app
         run: xcodebuild -project SessionScribe.xcodeproj -scheme SessionScribe -configuration Debug build CODE_SIGNING_ALLOWED=NO
