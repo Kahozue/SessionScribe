@@ -4,8 +4,7 @@ import SwiftUI
 /// 錄音與權限、標記快捷鍵、Local Only 隱私。
 /// 質感對齊系統設定的簡潔，不做插畫堆疊；步進動畫過 Reduce Motion 降級。
 struct OnboardingSheet: View {
-    @AppStorage(DisplaySettings.onboardingCompletedKey)
-    private var completed = false
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var step = 0
 
@@ -60,7 +59,7 @@ struct OnboardingSheet: View {
                         withAnimation(.easeInOut(duration: 0.2)) { step += 1 }
                     }
                 } else {
-                    completed = true
+                    dismiss()
                 }
             } label: {
                 Text(step < pages.count - 1 ? "繼續" : "開始使用")
@@ -70,7 +69,7 @@ struct OnboardingSheet: View {
             .controlSize(.large)
 
             Button("略過") {
-                completed = true
+                dismiss()
             }
             .buttonStyle(.borderless)
             .foregroundStyle(.secondary)

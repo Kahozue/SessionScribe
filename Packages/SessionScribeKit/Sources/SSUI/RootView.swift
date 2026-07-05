@@ -33,6 +33,7 @@ public struct RootView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(DisplaySettings.onboardingCompletedKey)
     private var onboardingCompleted = false
+    @State private var showOnboarding = false
     @AppStorage(DisplaySettings.appearanceKey)
     private var appearance = "system"
 
@@ -67,11 +68,15 @@ public struct RootView: View {
                 searchHighlight = nil
             }
         }
-        .sheet(
-            isPresented: Binding(
-                get: { !onboardingCompleted },
-                set: { if !$0 { onboardingCompleted = true } })
-        ) {
+        // onboarding 顯示不直接綁 AppStorage：視窗 restore 早期會吃掉 sheet 並誤標完成，
+        // 改由 task 延遲觸發，任何方式關閉（完成、略過、Esc）都視為看過。
+        .task {
+            if !onboardingCompleted {
+                try? await Task.sleep(for: .milliseconds(400))
+                showOnboarding = true
+            }
+        }
+        .sheet(isPresented: $showOnboarding, onDismiss: { onboardingCompleted = true }) {
             OnboardingSheet()
         }
         .sheet(isPresented: $showCategoryManager) {
