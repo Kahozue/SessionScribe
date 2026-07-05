@@ -3,6 +3,8 @@ import SwiftUI
 /// 鍵盤快捷鍵總覽（spec 第六節）：「說明」選單開啟，列出全部快捷鍵，
 /// 單鍵標記的焦點規則一併說明。
 public struct ShortcutsOverviewView: View {
+    @AppStorage(DisplaySettings.appearanceKey)
+    private var appearance = "system"
 
     public init() {}
 
@@ -39,6 +41,8 @@ public struct ShortcutsOverviewView: View {
         .padding(20)
         .frame(width: 440)
         .appTypography()
+        // 獨立 Window scene，不經 RootView：自己跟 app 外觀設定。
+        .preferredColorScheme(DisplaySettings.colorScheme(for: appearance))
     }
 
     private func section(_ title: String, shortcuts: [Shortcut]) -> some View {

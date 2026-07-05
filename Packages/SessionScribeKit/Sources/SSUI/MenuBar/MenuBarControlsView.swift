@@ -7,6 +7,8 @@ import SwiftUI
 public struct MenuBarControlsView: View {
     @Bindable var model: RecordingViewModel
     @Environment(\.openWindow) private var openWindow
+    @AppStorage(DisplaySettings.appearanceKey)
+    private var appearance = "system"
 
     public init(model: RecordingViewModel) {
         self.model = model
@@ -48,6 +50,8 @@ public struct MenuBarControlsView: View {
         .padding(12)
         .frame(width: 240)
         .appTypography()
+        // 面板是獨立 scene，不經 RootView：自己跟 app 外觀設定，避免與主視窗兩色系。
+        .preferredColorScheme(DisplaySettings.colorScheme(for: appearance))
     }
 
     @ViewBuilder
