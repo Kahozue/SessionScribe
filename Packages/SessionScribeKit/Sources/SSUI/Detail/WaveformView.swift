@@ -61,9 +61,13 @@ struct WaveformView: View {
         guard count > 0, totalSeconds > 0 else { return }
         let barWidth = size.width / CGFloat(count)
         let playedX = CGFloat(currentSeconds / totalSeconds) * size.width
+        // 語音的絕對 RMS 偏低（多在 0.02 至 0.15），按整場最大值正規化，
+        // 低音量錄音才有可讀的視覺輪廓；上限 0.9 留呼吸空間。
+        let maxRMS = CGFloat(waveform.rms.max() ?? 0)
+        let scale = maxRMS > 0 ? 0.9 / maxRMS : 1
         for index in 0..<count {
             let x = CGFloat(index) * barWidth
-            let amplitude = max(0.06, CGFloat(min(1, waveform.rms[index] * 1.6)))
+            let amplitude = max(0.06, min(1, CGFloat(waveform.rms[index]) * scale))
             let height = amplitude * size.height
             let bar = CGRect(
                 x: x, y: (size.height - height) / 2,
