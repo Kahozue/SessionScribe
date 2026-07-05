@@ -793,6 +793,7 @@ public struct SessionDetailView: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(style.border, lineWidth: 1)
         )
+        .cardHoverHighlight()
         .help("點擊編輯這筆事件")
     }
 

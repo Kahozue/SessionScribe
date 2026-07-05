@@ -120,6 +120,7 @@ struct MarkerInspectorRow: View {
             RoundedRectangle(cornerRadius: 6)
                 .stroke(style.border, lineWidth: 1)
         )
+        .cardHoverHighlight(cornerRadius: 6)
     }
 
     private var rowContent: some View {
