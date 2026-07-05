@@ -4,9 +4,11 @@ import SwiftUI
 @main
 struct SessionScribeApp: App {
     @State private var model = RecordingViewModel()
+    @AppStorage(DisplaySettings.menuBarControlsEnabledKey)
+    private var menuBarControlsEnabled = true
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             RootView(model: model)
         }
         .defaultSize(width: 1100, height: 720)
@@ -32,5 +34,14 @@ struct SessionScribeApp: App {
         Settings {
             SettingsView(model: model)
         }
+
+        // 選單列錄音控制（作品集輪，spec 第五節）：與主視窗共享同一個 model，
+        // 開關關閉時 scene 不建立（isInserted）。
+        MenuBarExtra(isInserted: $menuBarControlsEnabled) {
+            MenuBarControlsView(model: model)
+        } label: {
+            MenuBarIconView(model: model)
+        }
+        .menuBarExtraStyle(.window)
     }
 }
