@@ -926,32 +926,7 @@ public struct SessionDetailView: View {
     @ViewBuilder
     private var playbackBar: some View {
         if let player = model.player {
-            HStack(spacing: 10) {
-                Button {
-                    if !player.isPlaying {
-                        SessionPlayerCache.shared.pauseAll(except: player)
-                    }
-                    player.togglePlay()
-                } label: {
-                    Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                        .appFont(.title3)
-                }
-                .buttonStyle(.borderless)
-                .help(player.isPlaying ? "暫停" : "播放")
-                Button {
-                    let index =
-                        Self.playbackRates.firstIndex(of: player.playbackRate) ?? 3
-                    player.playbackRate =
-                        Self.playbackRates[(index + 1) % Self.playbackRates.count]
-                } label: {
-                    Text(String(format: "%g×", player.playbackRate))
-                        .appFont(.callout, monospacedDigit: true)
-                        .frame(minWidth: 40)
-                }
-                .buttonStyle(.borderless)
-                .help("播放倍速（點擊循環切換）")
-                Text(TimeFormatting.hms(player.currentSeconds))
-                    .appFont(.caption, monospacedDigit: true)
+            VStack(spacing: 6) {
                 if let waveform = model.waveform {
                     WaveformView(
                         waveform: waveform,
@@ -966,14 +941,43 @@ public struct SessionDetailView: View {
                             get: { player.currentSeconds },
                             set: { player.seek(to: $0) }),
                         in: 0...max(player.totalSeconds, 0.01))
+                }
+                HStack(spacing: 10) {
+                    Button {
+                        if !player.isPlaying {
+                            SessionPlayerCache.shared.pauseAll(except: player)
+                        }
+                        player.togglePlay()
+                    } label: {
+                        Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                            .appFont(.title3)
+                    }
+                    .buttonStyle(.borderless)
+                    .help(player.isPlaying ? "暫停" : "播放")
+                    Button {
+                        let index =
+                            Self.playbackRates.firstIndex(of: player.playbackRate) ?? 3
+                        player.playbackRate =
+                            Self.playbackRates[(index + 1) % Self.playbackRates.count]
+                    } label: {
+                        Text(String(format: "%g×", player.playbackRate))
+                            .appFont(.callout, monospacedDigit: true)
+                            .frame(minWidth: 40)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("播放倍速（點擊循環切換）")
+                    Text(TimeFormatting.hms(player.currentSeconds))
+                        .appFont(.caption, monospacedDigit: true)
+                    Spacer()
                     if model.waveformGenerating {
                         ProgressView(value: model.waveformProgress)
                             .frame(width: 60)
                             .help("產生波形中")
                     }
+                    Text(TimeFormatting.hms(player.totalSeconds))
+                        .appFont(.caption, monospacedDigit: true)
+                        .foregroundStyle(.secondary)
                 }
-                Text(TimeFormatting.hms(player.totalSeconds))
-                    .appFont(.caption, monospacedDigit: true)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -1054,7 +1058,8 @@ struct LyricsTranscriptView: View {
             HStack(spacing: 6) {
                 Text(TimeFormatting.hms(segment.startSeconds))
                     .appFont(.caption2, monospacedDigit: true)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(
+                        isCurrent ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tertiary))
                     .contentShape(Rectangle())
                     .onTapGesture {
                         onSelect(segment)
