@@ -37,6 +37,25 @@
 
 依賴方向嚴格由上往下。app target（SessionScribe/）只負責組裝與 entitlements。
 
+同一張圖的 mermaid 版（GitHub 頁面直接渲染）：
+
+```mermaid
+flowchart TB
+    app["App shell（SessionScribe/）<br/>組裝 scenes 與 entitlements"]
+    ui["UI 層（SSUI，SwiftUI）<br/>三欄主視窗、檢視頁、menu bar、字幕浮層、view models<br/>只依賴 protocol 與值型別"]
+    domain["領域層（SSCore）<br/>SessionController、TranscriptionCoordinator、MarkerService、<br/>EventOrganizer、TranscriptSummarizer、ExportService、AssistResolver"]
+    audio["SSAudio<br/>擷取、分塊寫入、音量、波形抽樣"]
+    speech["SSTranscription<br/>Apple Speech 引擎鏈、Mock 引擎"]
+    storage["SSCore.Storage<br/>SessionStore、JSONL、崩潰恢復"]
+    cloud["SSCore.Cloud<br/>LLM 與 STT 轉接器、Keychain<br/>（唯一 URLSession）"]
+
+    app --> ui --> domain
+    domain --> audio
+    domain --> speech
+    domain --> storage
+    domain --> cloud
+```
+
 ## 二、並行模型
 
 - 有狀態服務（SessionController、ChunkedAudioWriter、SessionStore）為 actor，狀態存取天然隔離。
