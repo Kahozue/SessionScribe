@@ -28,7 +28,7 @@ public struct MenuBarControlsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .font(.callout)
+            .appFont(.callout)
 
             controlButtons
 
@@ -47,6 +47,7 @@ public struct MenuBarControlsView: View {
         }
         .padding(12)
         .frame(width: 240)
+        .appTypography()
     }
 
     @ViewBuilder
@@ -96,7 +97,7 @@ public struct MenuBarControlsView: View {
     private var markerButtons: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("快速標記")
-                .font(.caption)
+                .appFont(.caption)
                 .foregroundStyle(.secondary)
             HStack(spacing: 6) {
                 ForEach(
