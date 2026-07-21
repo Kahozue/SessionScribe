@@ -18,4 +18,3 @@ tasks/
 # 環境與機密
 .env
 *.key
-.tools/
